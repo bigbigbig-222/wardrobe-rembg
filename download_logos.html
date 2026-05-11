@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brand Logo Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #1f6f5f;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #155448;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .progress {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            display: none;
+        }
+        .progress.active {
+            display: block;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #1f6f5f;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .status {
+            font-size: 14px;
+            color: #666;
+        }
+        .brand-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .brand-item {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+            background: #fafafa;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .brand-item img {
+            max-width: 80px;
+            max-height: 80px;
+            margin-bottom: 10px;
+            object-fit: contain;
+        }
+        .brand-item.success {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+        .brand-item.error {
+            background: #ffebee;
+            border-color: #f44336;
+        }
+        .brand-item.loading {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+        .brand-name {
+            font-size: 12px;
+            word-break: break-word;
+            margin-top: 10px;
+        }
+        .output {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            display: none;
+        }
+        .output.active {
+            display: block;
+        }
+        .output textarea {
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .copy-btn {
+            margin-top: 10px;
+            padding: 8px 15px;
+            background: #2196f3;
+        }
+        .copy-btn:hover {
+            background: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Brand Logo Downloader</h1>
+        <p>Download official brand logos and convert them to Base64 data URIs for offline use.</p>
+
+        <div class="controls">
+            <button id="startBtn" onclick="startDownload()">Start Download</button>
+            <button id="stopBtn" onclick="stopDownload()" disabled>Stop</button>
+            <button id="exportBtn" onclick="exportLogos()" disabled>Export as JavaScript</button>
+        </div>
+
+        <div class="progress" id="progressDiv">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="status" id="status">Initializing...</div>
+        </div>
+
+        <div class="brand-grid" id="brandGrid"></div>
+
+        <div class="output" id="outputDiv">
+            <h3>Generated JavaScript Code</h3>
+            <textarea id="outputCode"></textarea>
+            <button class="copy-btn" onclick="copyToClipboard()">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script>
+        const BRANDS = [
+            "Uniqlo", "MUJI", "ZARA", "H&M", "GAP", "Levi's",
+            "Nike", "Adidas", "Puma", "New Balance", "Converse", "Vans",
+            "Skechers", "ANTA", "Li-Ning", "FILA",
+            "The North Face", "Columbia", "Lululemon", "Massimo Dutti",
+            "mont-bell", "Arc'teryx", "KEEN", "Nanamica", "Patagonia",
+            "Mammut", "Salomon", "Merrell", "HOKA", "On",
+            "Black Diamond", "Snow Peak", "Deuter", "Osprey", "Jack Wolfskin"
+        ];
+
+        let isRunning = false;
+        const logos = {};
+
+        function normalizeBrandKey(brand) {
+            return brand.toLowerCase().replace(/'/g, '').replace(/\s+/g, '');
+        }
+
+        function initBrandGrid() {
+            const grid = document.getElementById('brandGrid');
+            grid.innerHTML = '';
+            BRANDS.forEach(brand => {
+                const item = document.createElement('div');
+                item.className = 'brand-item';
+                item.id = `brand-${normalizeBrandKey(brand)}`;
+                item.innerHTML = `
+                    <div style="color: #999; font-size: 24px;">⏳</div>
+                    <div class="brand-name">${brand}</div>
+                `;
+                grid.appendChild(item);
+            });
+        }
+
+        async function downloadLogoForBrand(brand) {
+            const key = normalizeBrandKey(brand);
+            const item = document.getElementById(`brand-${key}`);
+
+            try {
+                item.classList.add('loading');
+
+                // Try Clearbit first
+                let logo = await downloadFromClearbit(brand);
+
+                if (logo) {
+                    logos[key] = logo;
+                    item.classList.remove('loading');
+                    item.classList.add('success');
+                    item.innerHTML = `
+                        <img src="${logo}" alt="${brand}">
+                        <div class="brand-name">${brand}</div>
+                    `;
+                } else {
+                    item.classList.remove('loading');
+                    item.classList.add('error');
+                    item.innerHTML = `
+                        <div style="color: #f44336; font-size: 24px;">✗</div>
+                        <div class="brand-name">${brand}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error(`Error for ${brand}:`, error);
+                item.classList.remove('loading');
+                item.classList.add('error');
+                item.innerHTML = `
+                    <div style="color: #f44336; font-size: 24px;">✗</div>
+                    <div class="brand-name">${brand}</div>
+                `;
+            }
+        }
+
+        async function downloadFromClearbit(brand) {
+            try {
+                // Clearbit CDN - returns images directly
+                const url = `https://logo.clearbit.com/${brand.toLowerCase().replace(/\s+/g, '')}.com`;
+                const response = await fetch(url, { mode: 'cors' });
+
+                if (!response.ok) throw new Error('Not found');
+
+                const blob = await response.blob();
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            } catch {
+                return null;
+            }
+        }
+
+        async function startDownload() {
+            isRunning = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('progressDiv').classList.add('active');
+            document.getElementById('exportBtn').disabled = true;
+
+            initBrandGrid();
+            logos = {};
+
+            for (let i = 0; i < BRANDS.length && isRunning; i++) {
+                const brand = BRANDS[i];
+                const progress = ((i + 1) / BRANDS.length) * 100;
+                document.getElementById('progressFill').style.width = progress + '%';
+                document.getElementById('status').textContent = `Processing ${i + 1}/${BRANDS.length}: ${brand}`;
+
+                await downloadLogoForBrand(brand);
+                await new Promise(resolve => setTimeout(resolve, 200)); // Rate limiting
+            }
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('exportBtn').disabled = Object.keys(logos).length === 0;
+            document.getElementById('status').textContent = `Done! Downloaded ${Object.keys(logos).length} logos.`;
+        }
+
+        function stopDownload() {
+            isRunning = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        }
+
+        function exportLogos() {
+            let jsCode = "// Auto-generated brand logos (offline)\n";
+            jsCode += "// Downloaded via browser from Clearbit API\n";
+            jsCode += "// Date: " + new Date().toISOString() + "\n\n";
+            jsCode += "const PRESET_BRAND_LOGOS_OFFLINE = {\n";
+
+            Object.entries(logos).forEach(([key, dataUri]) => {
+                jsCode += `  '${key}': '${dataUri}',\n`;
+            });
+
+            jsCode += "};\n\n";
+            jsCode += "// Integration instructions:\n";
+            jsCode += "// 1. Add PRESET_BRAND_LOGOS_OFFLINE variable above\n";
+            jsCode += "// 2. Modify buildPresetBrandLogos() in app.js to merge this data:\n";
+            jsCode += "//    return { ...PRESET_BRAND_LOGOS_OFFLINE, ...originalLogos };\n";
+
+            document.getElementById('outputCode').value = jsCode;
+            document.getElementById('outputDiv').classList.add('active');
+        }
+
+        function copyToClipboard() {
+            const textarea = document.getElementById('outputCode');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Copied to clipboard!');
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            initBrandGrid();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>我的虚拟衣柜</title>
+    <meta name="description" content="手机优先的虚拟衣柜，支持添加、分类与筛选衣物。" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Outfit:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a" aria-hidden="true"></div>
+    <div class="bg-shape bg-shape-b" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <p class="hero__eyebrow">Virtual Wardrobe</p>
+        <h1 class="hero__title">我的虚拟衣柜</h1>
+        <p class="hero__subtitle">把每一件服装放进手机里的衣柜，随时查看与筛选。</p>
+        <div class="hero-top">
+          <div class="hero-nav">
+            <div class="view-tabs" role="tablist" aria-label="页面切换">
+              <button class="tab-btn is-active" id="tabWardrobe" type="button" role="tab" aria-selected="true">
+                衣柜
+              </button>
+              <button class="tab-btn" id="tabRecommend" type="button" role="tab" aria-selected="false">
+                穿搭推荐
+              </button>
+            </div>
+            <div class="hero-actions" id="wardrobeActions">
+              <button class="btn btn--primary" id="openAddFromHero" type="button">+ 添加新服装</button>
+              <button class="btn btn--menu" id="openBrandLibraryBtn" type="button">品牌库</button>
+              <details class="io-menu" id="ioMenu">
+                <summary class="btn btn--menu">导入/导出</summary>
+                <div class="io-menu__list" role="menu" aria-label="导入导出方式">
+                  <button class="io-menu__item" id="importJsonBtn" type="button" role="menuitem">导入 JSON</button>
+                  <button class="io-menu__item" id="importCsvBtn" type="button" role="menuitem">导入 CSV</button>
+                  <button class="io-menu__item" id="exportBtn" type="button" role="menuitem">导出数据</button>
+                </div>
+              </details>
+              <input id="importJsonInput" type="file" accept="application/json,.csv,text/csv" hidden />
+            </div>
+          </div>
+          <div class="weather-widget" aria-live="polite">
+            <img id="weatherIcon" class="weather-widget__icon" src="assets/weather-cloud.svg" alt="天气图标" />
+            <span class="weather-widget__text" id="weatherInfo">天气加载中...</span>
+            <button class="weather-widget__refresh" id="refreshWeatherBtn" type="button" aria-label="刷新天气">↻</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" id="wardrobePanel" aria-labelledby="categoriesTitle">
+        <div class="panel__top">
+          <h2 id="categoriesTitle">服装分类</h2>
+          <span class="total-pill" id="totalCount">总计 0 件</span>
+        </div>
+        <div id="categoryGrid" class="category-grid"></div>
+      </section>
+
+      <section class="panel" id="filterPanel" aria-labelledby="filterTitle">
+        <div class="panel__top">
+          <h2 id="filterTitle">筛选与搜索</h2>
+          <div class="filter-actions">
+            <button class="btn btn--ghost" id="clearCurrentFilters" type="button">清空当前筛选</button>
+            <button class="btn btn--ghost" id="resetFilters" type="button">重置</button>
+          </div>
+        </div>
+        <form id="filterForm" autocomplete="off">
+          <div class="filters-row">
+            <select id="filterCategory" name="category" aria-label="分类">
+              <option value="all">全部分类</option>
+            </select>
+            <div class="brand-filter-wrap" id="brandFilterWrap">
+              <select id="filterBrand" name="brand" aria-label="品牌" hidden>
+                <option value="all">全部品牌</option>
+              </select>
+              <button id="filterBrandTrigger" class="brand-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                全部品牌
+              </button>
+              <div id="filterBrandMenu" class="brand-filter-menu" role="listbox" hidden></div>
+            </div>
+            <select id="filterColor" name="color" aria-label="颜色">
+              <option value="all">全部颜色</option>
+            </select>
+            <select id="filterSeason" name="season" aria-label="季节">
+              <option value="all">全部季节</option>
+            </select>
+            <select id="sortOrder" name="sortOrder" aria-label="排序">
+              <option value="newest">最新添加</option>
+              <option value="oldest">最早添加</option>
+              <option value="price-asc">价格从低到高</option>
+              <option value="price-desc">价格从高到低</option>
+            </select>
+            <select id="filterPriceRange" name="priceRange" aria-label="价格区间">
+              <option value="all">全部价格</option>
+              <option value="0-99">0-99</option>
+              <option value="100-299">100-299</option>
+              <option value="300-499">300-499</option>
+              <option value="500+">500以上</option>
+            </select>
+          </div>
+          <input
+            id="searchInput"
+            name="search"
+            type="search"
+            placeholder="搜索名称/品牌/尺码"
+            aria-label="搜索"
+          />
+        </form>
+      </section>
+
+      <section class="panel" id="listPanel" aria-labelledby="listTitle">
+        <div class="panel__top">
+          <div class="list-title-wrap">
+            <h2 id="listTitle">衣柜清单</h2>
+            <button class="btn btn--ghost list-back-btn" id="clearCategoryView" type="button" hidden>返回全部分类</button>
+          </div>
+          <span class="result-pill" id="resultCount">显示 0 件</span>
+        </div>
+        <p class="category-view-label" id="categoryViewLabel" hidden></p>
+        <div id="clothesList" class="clothes-list"></div>
+      </section>
+
+      <section class="panel" id="recommendPanel" aria-labelledby="recommendTitle" hidden>
+        <div class="panel__top">
+          <h2 id="recommendTitle">穿搭推荐</h2>
+          <span class="result-pill" id="recommendCount">推荐 0 套</span>
+        </div>
+        <form id="recommendForm" class="recommend-controls" autocomplete="off">
+          <select id="weatherSelect" name="weather" aria-label="天气">
+            <option value="any">不锁定天气</option>
+            <option value="hot">炎热</option>
+            <option value="mild">温和</option>
+            <option value="cold">偏冷</option>
+          </select>
+          <select id="sceneSelect" name="scene" aria-label="场景">
+            <option value="any">不锁定场合</option>
+            <option value="daily">日常</option>
+            <option value="work">通勤</option>
+            <option value="sport">运动</option>
+            <option value="date">约会</option>
+          </select>
+          <select id="lockTopSelect" name="lockTop" aria-label="锁定上衣">
+            <option value="">不锁定上衣</option>
+          </select>
+          <select id="lockBottomSelect" name="lockBottom" aria-label="锁定下装">
+            <option value="">不锁定下装</option>
+          </select>
+          <select id="lockAccessorySelect" name="lockAccessory" aria-label="锁定配饰">
+            <option value="">不锁定配饰</option>
+          </select>
+          <button class="btn btn--primary" id="refreshRecommend" type="button">生成推荐</button>
+        </form>
+        <div id="recommendList" class="recommend-list"></div>
+        <section class="favorite-wrap" aria-labelledby="favoriteTitle">
+          <div class="panel__top panel__top--sub">
+            <h3 id="favoriteTitle">已收藏穿搭</h3>
+            <span class="result-pill" id="favoriteCount">收藏 0 套</span>
+          </div>
+          <div id="favoriteList" class="recommend-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <button class="fab" id="openAddFab" type="button" aria-label="添加新服装">+</button>
+
+    <dialog id="addDialog" class="add-dialog">
+      <form method="dialog" class="dialog-card" id="addForm" autocomplete="off">
+        <header class="dialog-card__header">
+          <h3 id="addDialogTitle">添加新服装</h3>
+          <button class="close-btn" id="closeDialog" type="button" aria-label="关闭">×</button>
+        </header>
+
+        <div class="dialog-card__body">
+          <div class="image-upload-block">
+            <label class="image-picker" for="imageInput">上传服装图片（可多选）</label>
+            <input name="image" id="imageInput" type="file" accept="image/*" multiple hidden />
+            <figure class="preview-wrap preview-wrap--top" id="previewWrap" hidden>
+              <img id="previewImage" alt="服装照片预览" />
+              <button class="preview-edit-btn" id="openImageEditorBtn" type="button" hidden>编辑</button>
+            </figure>
+            <div class="image-gallery" id="imageGallery" hidden></div>
+          </div>
+
+          <label>
+            服装名称
+            <input name="name" type="text" required maxlength="40" placeholder="例如：白色基础短袖" />
+          </label>
+
+          <label>
+            品牌
+            <div class="brand-filter-wrap" id="addBrandWrap">
+              <input id="addBrandInput" name="brand" type="text" required hidden />
+              <button id="addBrandTrigger" class="brand-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                请选择品牌
+              </button>
+              <div id="addBrandMenu" class="brand-filter-menu" role="listbox" hidden></div>
+            </div>
+          </label>
+
+          <label>
+            尺码
+            <select name="size" id="addSize" required></select>
+          </label>
+
+          <label>
+            价格（元）
+            <input name="price" type="number" required min="0" step="0.01" placeholder="例如：99" />
+          </label>
+
+          <label>
+            分类
+            <select name="category" id="addCategory" required></select>
+          </label>
+
+          <label>
+            季节
+            <select name="season" id="addSeason" required></select>
+          </label>
+
+          <label>
+            颜色
+            <select name="color" id="addColor"></select>
+            <div style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+              或自定义颜色：<input type="text" id="customColorInput" placeholder="例如：湖蓝色、玫瑰粉" maxlength="30" style="margin-top: 0.25rem; width: 100%;" />
+            </div>
+          </label>
+
+          <div class="add-unsaved-banner" id="addUnsavedBanner" hidden>
+            <span>服装未保存，是否关闭？</span>
+            <div class="add-unsaved-banner__actions">
+              <button class="btn btn--ghost" id="addUnsavedCancelBtn" type="button">继续编辑</button>
+              <button class="btn btn--warn" id="addUnsavedConfirmBtn" type="button">放弃并关闭</button>
+            </div>
+          </div>
+        </div>
+
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelAdd" type="button">取消</button>
+          <button class="btn btn--primary" id="saveClothBtn" type="submit">保存到衣柜</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="imageEditorDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--wide image-editor-dialog">
+        <header class="dialog-card__header">
+          <h3>编辑图片</h3>
+          <button class="close-btn" id="closeImageEditorDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body image-editor-body">
+          <div class="image-editor-toolbar">
+            <div class="editor-toolbar-main">
+              <button class="btn btn--editor" id="editorCropModeBtn" type="button">裁剪</button>
+              <button class="btn btn--editor" id="editorEraserModeBtn" type="button">橡皮擦</button>
+              <button class="btn btn--editor" id="editorRotateModeBtn" type="button">旋转</button>
+              <button class="btn btn--editor" id="editorCutoutBtn" type="button">智能抠图</button>
+              <button class="btn btn--editor" id="editorRemoveBgBtn" type="button" title="使用AI移除背景">AI抠图</button>
+              <span id="cutoutMarkBtns" style="display:none">
+                <button class="btn btn--editor" id="editorFgMarkBtn" type="button">标记前景</button>
+                <button class="btn btn--editor" id="editorBgMarkBtn" type="button">标记背景</button>
+                <button class="btn btn--editor btn--primary" id="editorDoCutoutBtn" type="button">执行抠图</button>
+                <button class="btn btn--ghost" id="editorExitCutoutBtn" type="button">退出抠图</button>
+              </span>
+            </div>
+            <div class="editor-toolbar-right">
+              <button class="btn btn--editor" id="editorUndoBtn" type="button" title="撤销">↶</button>
+              <button class="btn btn--editor" id="editorRedoBtn" type="button" title="重做">↷</button>
+            </div>
+          </div>
+          <div class="editor-toolbar-crop" id="editorToolbarCrop" hidden>
+            <button class="btn btn--editor" id="editorApplyCropBtn" type="button">应用裁剪</button>
+          </div>
+          <div class="editor-toolbar-rotate" id="editorToolbarRotate" hidden>
+            <button class="btn btn--editor btn--editor-icon" id="editorApplyRotateBtn" type="button" aria-label="顺时针旋转90度" title="顺时针旋转90度">
+              <svg class="editor-btn-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <!-- image box -->
+                <rect x="3" y="6" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                <!-- 90° clockwise arc from box corner -->
+                <path d="M15 5 a7 7 0 0 1 5 7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/>
+                <!-- arrowhead pointing down at arc end -->
+                <polyline points="17,12 20,12 20,9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/>
+              </svg>
+            </button>
+            <button class="btn btn--editor btn--editor-icon" id="editorMirrorBtn" type="button" aria-label="水平镜像翻转" title="水平镜像翻转">
+              <svg class="editor-btn-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <!-- vertical center axis -->
+                <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" stroke-linecap="round"/>
+                <!-- left arrow pointing away from center -->
+                <polyline points="9,8 5,12 9,16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9"/>
+                <line x1="5" y1="12" x2="11" y2="12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                <!-- right arrow pointing away from center -->
+                <polyline points="15,8 19,12 15,16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9"/>
+                <line x1="13" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="editor-eraser-control" id="editorEraserControl" hidden>
+            <span class="slider-strip__label">笔刷</span>
+            <input type="range" id="editorEraserSlider" min="8" max="60" value="18" />
+            <span class="slider-strip__value" id="editorEraserSize">18</span>
+          </div>
+          <div class="editor-eraser-control" id="editorMarkControl" hidden>
+            <span class="slider-strip__label">标记大小</span>
+            <input type="range" id="editorMarkSlider" min="4" max="48" value="14" />
+            <span class="slider-strip__value" id="editorMarkSize">14</span>
+          </div>
+          <p class="image-editor-hint" id="imageEditorHint">选择一个编辑工具开始。</p>
+          <div class="editor-unsaved-banner" id="editorUnsavedBanner" hidden>
+            <span>图片已修改，关闭后不会应用到预览。</span>
+            <div class="editor-unsaved-banner__actions">
+              <button class="btn btn--ghost" id="editorUnsavedCancelBtn" type="button">继续编辑</button>
+              <button class="btn btn--warn" id="editorUnsavedConfirmBtn" type="button">放弃并关闭</button>
+            </div>
+          </div>
+          <div class="image-editor-canvas-wrap" id="imageEditorCanvasWrap">
+            <canvas id="imageEditorCanvas" aria-label="图片编辑画布"></canvas>
+          </div>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelImageEditorBtn" type="button">取消</button>
+          <button class="btn btn--primary" id="applyImageEditorBtn" type="button">应用到预览</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="brandLibraryDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header brand-library-header">
+          <h3>品牌库</h3>
+          <button class="close-btn" id="closeBrandLibraryDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <div class="brand-library-actions">
+            <button class="btn btn--ghost" id="deleteSelectedBrandsBtn" type="button" disabled hidden>删除所选</button>
+          </div>
+          <div class="brand-library-search-wrap">
+            <input id="brandLibrarySearchInput" type="text" placeholder="搜索品牌（支持模糊匹配）" aria-label="搜索品牌" />
+          </div>
+          <div id="brandLibraryList" class="brand-library-list"></div>
+          <div class="brand-library-btn-row">
+            <button class="btn btn--primary" id="openCreateBrandFromLibrary" type="button" style="flex:2">+ 添加新品牌</button>
+            <button class="btn btn--primary brand-multiselect-btn" id="toggleBrandMultiSelectBtn" type="button" aria-pressed="false" title="多选/取消多选" style="flex:1">多选</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="createBrandDialog" class="add-dialog">
+      <form method="dialog" class="dialog-card dialog-card--mini" id="createBrandForm" autocomplete="off">
+        <header class="dialog-card__header">
+          <h3>新增品牌</h3>
+          <button class="close-btn" id="closeCreateBrandDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <label>
+            品牌名称
+            <input id="newBrandNameInput" type="text" maxlength="30" placeholder="例如：Arc'teryx" required />
+          </label>
+          <label class="image-picker" for="newBrandLogoInput">上传品牌Logo</label>
+          <input id="newBrandLogoInput" type="file" accept="image/*" hidden />
+          <div id="brandLogoPreviewWrap" style="margin-top: 1rem; text-align: center; display: none;">
+            <img id="brandLogoPreview" style="max-width: 120px; max-height: 120px; border-radius: 8px; object-fit: contain;" alt="品牌Logo预览" />
+            <div style="margin-top: 0.5rem;">
+              <button type="button" id="clearBrandLogoBtn" class="btn btn--ghost" style="font-size: 0.8rem;">清除图片</button>
+            </div>
+          </div>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelCreateBrand" type="button">取消</button>
+          <button class="btn btn--primary" id="confirmCreateBrand" type="submit">保存品牌</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="importModeDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3>选择导入方式</h3>
+          <button class="close-btn" id="closeImportModeDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label" id="importModeHint">请选择导入方式：</p>
+          <label id="importScopeField">
+            导入内容
+            <select id="importScopeSelect">
+              <option value="full">完整备份（衣物、图片、收藏穿搭、配置快照）</option>
+              <option value="items">仅衣物（含图片）</option>
+            </select>
+          </label>
+          <button class="btn btn--primary" id="chooseImportMerge" type="button">合并导入（保留现有数据）</button>
+          <button class="btn btn--ghost" id="chooseImportOverwrite" type="button">覆盖导入（替换现有数据）</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="exportScopeDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3>选择导出内容</h3>
+          <button class="close-btn" id="closeExportScopeDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label" id="exportScopeHint">请选择导出范围与格式：</p>
+          <button class="btn btn--primary" id="chooseExportFull" type="button">📦 完整备份（JSON）— 含衣物、图片、收藏穿搭</button>
+          <button class="btn btn--ghost" id="chooseExportItems" type="button">👕 仅衣物（JSON）— 含图片</button>
+          <button class="btn btn--ghost" id="chooseExportCsv" type="button">📄 仅衣物（CSV）— 含图片字段</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="conflictDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--wide">
+        <header class="dialog-card__header">
+          <h3>发现重复衣物</h3>
+          <button class="close-btn" id="closeConflictDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label">检测到名称或图片重复，请选择保留哪一件：</p>
+          <div class="conflict-compare">
+            <article class="conflict-item" id="existingConflictCard">
+              <h4>当前衣柜</h4>
+              <img id="existingConflictImage" alt="当前衣柜图片" />
+              <p id="existingConflictMeta"></p>
+            </article>
+            <article class="conflict-item" id="incomingConflictCard">
+              <h4>导入衣物</h4>
+              <img id="incomingConflictImage" alt="导入衣物图片" />
+              <p id="incomingConflictMeta"></p>
+            </article>
+          </div>
+        </div>
+        <footer class="dialog-card__footer conflict-actions">
+          <button class="btn btn--ghost" id="keepExistingBtn" type="button">保留当前</button>
+          <button class="btn btn--primary" id="keepIncomingBtn" type="button">保留导入</button>
+          <button class="btn btn--ghost" id="keepAllConflictsBtn" type="button">全部保留当前冲突</button>
+          <button class="btn btn--ghost" id="replaceAllConflictsBtn" type="button">全部替换剩余冲突</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <template id="clothingCardTemplate">
+      <article class="clothing-card">
+        <img class="clothing-card__img" alt="服装照片" />
+        <div class="clothing-card__body">
+          <span class="clothing-card__category"></span>
+          <h3 class="clothing-card__name"></h3>
+          <p class="clothing-card__meta"></p>
+          <p class="clothing-card__price"></p>
+          <div class="card-actions">
+            <button class="btn btn--ghost card-btn" data-action="edit" type="button">编辑</button>
+            <button class="btn btn--ghost card-btn card-btn--danger" data-action="delete" type="button">删除</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <template id="recommendCardTemplate">
+      <article class="recommend-card">
+        <h3 class="recommend-card__title"></h3>
+        <p class="recommend-card__line"></p>
+        <p class="recommend-card__line"></p>
+        <p class="recommend-card__line"></p>
+        <div class="card-actions">
+          <button class="btn btn--ghost card-btn" data-action="save-look" type="button">收藏这套</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="backgroundremoval.min.js"></script>
+    <script src="brand_logos_cdn.js"></script>
+    <script src="app.js"></script>
+    <script>
+      // Register Service Worker for offline support and caching
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js').catch(err => {
+          console.log('Service Worker registration failed:', err);
+        });
+      }
+    </script>
+  </body>
+</html>
