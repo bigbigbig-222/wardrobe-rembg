@@ -4973,16 +4973,85 @@ function applyRemoteSnapshotToLocal(remoteSnapshot) {
 /**
  * 基于轻量索引差异构建摘要文案
  */
-function buildIndexDiffSummary(diff) {
-  return [
-    "检测到本地与云端存在差异：",
-    `- 衣物：本地新增 ${diff.items.localOnlyIds.length}，云端新增 ${diff.items.remoteOnlyIds.length}，内容差异 ${diff.items.changedIds.length}`,
-    `- 收藏穿搭：本地新增 ${diff.looks.localOnlyIds.length}，云端新增 ${diff.looks.remoteOnlyIds.length}，内容差异 ${diff.looks.changedIds.length}`,
-    "",
-    "请选择同步方向：",
-    "- 使用本地并上传：以本地为准，把差异补丁上传到云端",
-    "- 使用云端并下载：以云端为准，覆盖本地数据",
-  ].join("\n");
+function buildIndexDiffSummary(diff, localSnapshot) {
+  const snapshot = localSnapshot || {};
+  const items = snapshot.items || [];
+  const looks = snapshot.favoriteLooks || [];
+  
+  // 建立 ID 到名称的映射
+  const itemMap = new Map(items.map(item => [String(item.id), item.name || '未命名衣物']));
+  const lookMap = new Map(looks.map(look => [String(look.id), look.title || '未命名搭配']));
+  
+  // 构建详细的差异信息
+  const lines = ["📊 检测到本地与云端存在差异：", ""];
+  
+  // 衣物差异
+  const itemDiffLines = [];
+  if (diff.items.localOnlyIds.length > 0) {
+    itemDiffLines.push(`  ✨ 本地新增 ${diff.items.localOnlyIds.length} 项衣物：`);
+    diff.items.localOnlyIds.slice(0, 5).forEach(id => {
+      const name = itemMap.get(String(id)) || '未知';
+      itemDiffLines.push(`     • ${name}`);
+    });
+    if (diff.items.localOnlyIds.length > 5) {
+      itemDiffLines.push(`     ... 及其他 ${diff.items.localOnlyIds.length - 5} 项`);
+    }
+  }
+  
+  if (diff.items.remoteOnlyIds.length > 0) {
+    itemDiffLines.push(`  ☁️  云端新增 ${diff.items.remoteOnlyIds.length} 项衣物`);
+  }
+  
+  if (diff.items.changedIds.length > 0) {
+    itemDiffLines.push(`  🔄 ${diff.items.changedIds.length} 项衣物内容已修改：`);
+    diff.items.changedIds.slice(0, 5).forEach(id => {
+      const name = itemMap.get(String(id)) || '未知';
+      itemDiffLines.push(`     • ${name}`);
+    });
+    if (diff.items.changedIds.length > 5) {
+      itemDiffLines.push(`     ... 及其他 ${diff.items.changedIds.length - 5} 项`);
+    }
+  }
+  
+  if (itemDiffLines.length > 0) {
+    lines.push("📦 衣物变化：");
+    lines.push(...itemDiffLines);
+    lines.push("");
+  }
+  
+  // 搭配差异
+  const lookDiffLines = [];
+  if (diff.looks.localOnlyIds.length > 0) {
+    lookDiffLines.push(`  ✨ 本地新增 ${diff.looks.localOnlyIds.length} 个搭配：`);
+    diff.looks.localOnlyIds.slice(0, 3).forEach(id => {
+      const name = lookMap.get(String(id)) || '未知';
+      lookDiffLines.push(`     • ${name}`);
+    });
+    if (diff.looks.localOnlyIds.length > 3) {
+      lookDiffLines.push(`     ... 及其他 ${diff.looks.localOnlyIds.length - 3} 个`);
+    }
+  }
+  
+  if (diff.looks.remoteOnlyIds.length > 0) {
+    lookDiffLines.push(`  ☁️  云端新增 ${diff.looks.remoteOnlyIds.length} 个搭配`);
+  }
+  
+  if (diff.looks.changedIds.length > 0) {
+    lookDiffLines.push(`  🔄 ${diff.looks.changedIds.length} 个搭配已修改`);
+  }
+  
+  if (lookDiffLines.length > 0) {
+    lines.push("👗 搭配变化：");
+    lines.push(...lookDiffLines);
+    lines.push("");
+  }
+  
+  // 总结和操作提示
+  lines.push("👇 请选择同步方向：");
+  lines.push("▸ 【使用本地】- 上传本地变化到云端");
+  lines.push("▸ 【使用云端】- 下载云端数据覆盖本地");
+  
+  return lines.join("\n");
 }
 
 function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source) {
@@ -4994,7 +5063,7 @@ function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, sourc
     isIndexBased: true,
   };
   if (refs.syncDiffSummaryText) {
-    refs.syncDiffSummaryText.textContent = buildIndexDiffSummary(diff);
+    refs.syncDiffSummaryText.textContent = buildIndexDiffSummary(diff, localSnapshot);
   }
   refs.syncDecisionDialog?.showModal();
 }
