@@ -1,6 +1,6 @@
 // Service Worker for caching brand logos and resources for offline access
-const CACHE_NAME = 'wardrobe-cache-v5';
-const LOGO_CACHE = 'wardrobe-logos-v5';
+const CACHE_NAME = 'wardrobe-cache-v6';
+const LOGO_CACHE = 'wardrobe-logos-v6';
 
 const URLS_TO_CACHE = [
   '/',
@@ -8,8 +8,9 @@ const URLS_TO_CACHE = [
   '/app.js',
   '/styles.css',
   '/mobile-optimization.css',
-  '/manifest.webmanifest?v=2',
-  '/assets/MyWardrobe-ico.png?v=2',
+  '/manifest.webmanifest?v=3',
+  '/apple-touch-icon-v3.png',
+  '/favicon-v3.png',
   '/assets/MyWardrobe-ico.png',
   '/brand_logos_cdn.js',
   '/cropper.min.js',
