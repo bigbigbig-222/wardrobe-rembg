@@ -39,8 +39,15 @@
     padding: 0 3px !important;
     font-size: 10px !important;
     white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     line-height: 1 !important;
     letter-spacing: -0.1px;
+  }
+
+  #openAddFromHero {
+    font-size: 9.5px !important;
+    letter-spacing: -0.2px;
   }
 
   /* 2) 服装分类改为单行 */
@@ -75,14 +82,14 @@
   /* 3) 筛选框字体变小，且同一行显示 */
   #filterPanel {
     padding: 10px !important;
-    overflow: hidden;
+    overflow: visible !important;
   }
 
   .filters-row {
     display: grid !important;
     grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
     gap: 4px !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     padding-bottom: 0 !important;
     min-width: 0 !important;
     align-items: center !important;
@@ -100,6 +107,8 @@
   #filterPanel .brand-filter-trigger {
     font-size: 10px !important;
     min-height: 30px !important;
+    height: 30px !important;
+    box-sizing: border-box !important;
     padding: 2px 4px !important;
     line-height: 1.2 !important;
   }
