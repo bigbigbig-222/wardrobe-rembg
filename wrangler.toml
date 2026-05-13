@@ -1,4 +1,4 @@
-name = "wardrobe-rembg"
+name = "wardrobe"
 main = "github-sync-worker.js"
 compatibility_date = "2024-01-01"
 
