@@ -58,6 +58,25 @@ const GITHUB_SYNC_CONFIG = {
   }
 };
 
+// AI 背景去除配置 (Render 部署)
+const REMBG_CONFIG = {
+  getApiUrl: function() {
+    return localStorage.getItem('rembgApiUrl') || '';
+  },
+  
+  setApiUrl: function(url) {
+    if (url) {
+      localStorage.setItem('rembgApiUrl', url);
+    } else {
+      localStorage.removeItem('rembgApiUrl');
+    }
+  },
+  
+  isEnabled: function() {
+    return !!this.getApiUrl();
+  }
+};
+
 // 主要品牌（精简常用，不预置过多）
 const MAJOR_BRAND_LIST = [
   "Uniqlo",
@@ -4435,6 +4454,81 @@ function bindEvents() {
   refs.addDialog.addEventListener("close", () => {
     resetAddForm();
   });
+}
+
+// ============== AI 抠图功能 ==============
+
+/**
+ * 调用 Render rembg API 去除图片背景
+ * @param {string} imageData - base64 编码的图片数据或 data URL
+ * @returns {Promise<string|null>} 返回处理后的 PNG data URL，失败返回 null
+ */
+async function removeImageBackground(imageData) {
+  try {
+    if (!REMBG_CONFIG.isEnabled()) {
+      showAppMessage('请先配置 rembg API 端点');
+      return null;
+    }
+
+    showAppMessage('正在处理图片...', false, 0); // 显示无进度条的加载提示
+
+    const response = await fetch(`${REMBG_CONFIG.getApiUrl()}/remove-bg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageData }),
+      timeout: 60000 // 60 秒超时
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    if (result.success && result.image) {
+      return result.image;
+    } else {
+      throw new Error(result.error || '背景去除失败');
+    }
+  } catch (error) {
+    console.error('[Background Removal] Error:', error);
+    showAppMessage(`背景去除失败: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * 批量去除图片背景
+ * @param {string[]} imageDataArray - 多个 base64 图片
+ * @returns {Promise<Array>} 返回结果数组
+ */
+async function removeMultipleBackgrounds(imageDataArray) {
+  try {
+    if (!REMBG_CONFIG.isEnabled()) {
+      showAppMessage('请先配置 rembg API 端点');
+      return [];
+    }
+
+    showAppMessage(`正在处理 ${imageDataArray.length} 张图片...`, false, 0);
+
+    const response = await fetch(`${REMBG_CONFIG.getApiUrl()}/remove-bg-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: imageDataArray }),
+      timeout: 120000 // 2 分钟超时
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      return result.results || [];
+    } else {
+      throw new Error(result.error || '批处理失败');
+    }
+  } catch (error) {
+    console.error('[Batch Background Removal] Error:', error);
+    showAppMessage(`批处理失败: ${error.message}`);
+    return [];
+  }
 }
 
 async function init() {
