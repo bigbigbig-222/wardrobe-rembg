@@ -4427,56 +4427,6 @@ async function removeImageBackground(imageData) {
   }
 }
 
-/**
- * 批量去除图片背景
- * @param {string[]} imageDataArray - 多个 base64 图片
- * @returns {Promise<Array>} 返回结果数组
- */
-async function removeMultipleBackgrounds(imageDataArray) {
-  try {
-    if (!REMBG_CONFIG.isEnabled()) {
-      showAppMessage('背景去除功能不可用');
-      return [];
-    }
-
-    showAppMessage(`正在处理 ${imageDataArray.length} 张图片...`, false, 0);
-
-    const results = [];
-    for (let i = 0; i < imageDataArray.length; i++) {
-      try {
-        showAppMessage(`正在处理 ${i + 1}/${imageDataArray.length}...`, false, 0);
-        
-        const img = new Image();
-        img.src = imageDataArray[i];
-        
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-        
-        const outputCanvas = await removeBackgroundWithMediaPipe(img);
-        const resultDataUrl = canvasToDataUrl(outputCanvas);
-        
-        results.push({
-          success: true,
-          image: resultDataUrl
-        });
-      } catch (error) {
-        results.push({
-          success: false,
-          error: error.message
-        });
-      }
-    }
-    
-    return results;
-  } catch (error) {
-    console.error('[Batch Background Removal] Error:', error);
-    showAppMessage(`批处理失败: ${error.message}`);
-    return [];
-  }
-}
-
 async function init() {
   // 启动时从 GitHub 拉取远端数据并与本地合并
   await syncWithGitHub();
