@@ -4924,10 +4924,13 @@ async function postSyncAction(action, data) {
     throw new Error("GitHub Sync 未启用");
   }
 
-  const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
+  // 在 Pages 环境中，使用本地代理路由；否则使用 Worker URL
+  const syncUrl = typeof window !== 'undefined' && window.location.hostname.includes('pages.dev')
+    ? '/api/sync'
+    : GITHUB_SYNC_CONFIG.getWorkerUrl();
   
   try {
-    const response = await fetch(workerUrl, {
+    const response = await fetch(syncUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, data }),
