@@ -4925,15 +4925,25 @@ async function postSyncAction(action, data) {
   }
 
   const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
-  const response = await fetch(workerUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, data }),
-  });
-  if (!response.ok) {
-    throw new Error(`同步失败（${response.status}）`);
+  
+  try {
+    const response = await fetch(workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, data }),
+    });
+    if (!response.ok) {
+      throw new Error(`同步失败（${response.status}）`);
+    }
+    return response.json();
+  } catch (err) {
+    // Worker 无法访问时的错误提示
+    if (err.message.includes("Load Failed") || err.message.includes("NetworkError")) {
+      console.error("[GitHub Sync] Worker unreachable:", err.message);
+      throw new Error("云端连接失败：您的网络可能无法访问 Worker。请检查网络连接或尝试切换 Wi-Fi/4G。");
+    }
+    throw err;
   }
-  return response.json();
 }
 
 async function fetchRemoteIndex() {
