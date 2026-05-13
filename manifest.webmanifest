@@ -1,0 +1,27 @@
+{
+  "name": "我的虚拟衣柜",
+  "short_name": "MyWardrobe",
+  "description": "手机优先的虚拟衣柜，支持添加、分类与筛选衣物。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff9ef",
+  "theme_color": "#1f6f5f",
+  "icons": [
+    {
+      "src": "assets/MyWardrobe-ico.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/MyWardrobe-ico.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/MyWardrobe-ico.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
