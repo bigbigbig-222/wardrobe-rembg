@@ -46,7 +46,18 @@
   }
 
   #openAddFromHero {
-    font-size: 9.5px !important;
+    flex: 1.35 1 0 !important;
+    min-width: 0 !important;
+    font-size: 10.5px !important;
+    padding: 0 6px !important;
+    letter-spacing: -0.05px;
+    text-overflow: clip !important;
+  }
+
+  #openBrandLibraryBtn {
+    flex: 0.82 1 0 !important;
+    font-size: 9px !important;
+    padding: 0 2px !important;
     letter-spacing: -0.2px;
   }
 
@@ -105,19 +116,20 @@
   #filterPanel input,
   #filterPanel select,
   #filterPanel .brand-filter-trigger {
-    font-size: 10px !important;
+    font-size: 9px !important;
     min-height: 30px !important;
     height: 30px !important;
     box-sizing: border-box !important;
     padding: 2px 4px !important;
     line-height: 1.2 !important;
+    letter-spacing: -0.1px;
   }
 
   #filterForm #searchInput {
     width: 100% !important;
     min-width: 0 !important;
     margin-top: 4px !important;
-    font-size: 10px !important;
+    font-size: 9px !important;
     min-height: 30px !important;
     padding: 3px 6px !important;
   }
