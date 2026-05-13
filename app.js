@@ -2766,37 +2766,22 @@ async function removeBackgroundWithAI() {
     return;
   }
 
+  if (!REMBG_CONFIG.isEnabled()) {
+    setImageEditorHint("请先配置 rembg API 端点。");
+    return;
+  }
+
   setImageEditorHint("正在处理图片，请稍候...");
   refs.editorRemoveBgBtn.disabled = true;
 
   try {
-    // 将canvas转换为PNG数据URL
+    // 将canvas转换为data URL
     const imageDataUrl = imageEditorState.sourceCanvas.toDataURL("image/png");
-    const base64Data = imageDataUrl.split(",")[1];
-
-    // 获取API地址
-    const apiUrl = API_CONFIG.getRemoveBgApiUrl();
-
-    // 调用后端REMBG服务
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        image: base64Data,
-        format: "png"
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || `服务器错误: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.status === "success" && result.image) {
+    
+    // 调用 rembg API
+    const resultDataUrl = await removeImageBackground(imageDataUrl);
+    
+    if (resultDataUrl) {
       // 将结果加载到canvas
       const img = new Image();
       img.onload = function() {
@@ -2807,19 +2792,19 @@ async function removeBackgroundWithAI() {
         
         saveEditorHistoryState();
         renderImageEditorCanvas();
-        setImageEditorHint("背景移除成功！");
+        setImageEditorHint("背景去除成功！");
         refs.editorRemoveBgBtn.disabled = false;
       };
       img.onerror = function() {
         throw new Error("无法加载处理后的图片");
       };
-      img.src = `data:image/png;base64,${result.image}`;
+      img.src = resultDataUrl;
     } else {
-      throw new Error(result.message || "未知错误");
+      throw new Error("处理失败，请重试");
     }
   } catch (error) {
-    console.error("AI背景移除错误:", error);
-    setImageEditorHint(`背景移除失败: ${error.message}`);
+    console.error("AI背景去除错误:", error);
+    setImageEditorHint(`背景去除失败: ${error.message}`);
     refs.editorRemoveBgBtn.disabled = false;
   }
 }
