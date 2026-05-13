@@ -1,6 +1,6 @@
 // Service Worker for caching brand logos and resources for offline access
-const CACHE_NAME = 'wardrobe-cache-v6';
-const LOGO_CACHE = 'wardrobe-logos-v6';
+const CACHE_NAME = 'wardrobe-cache-v7';
+const LOGO_CACHE = 'wardrobe-logos-v7';
 
 const URLS_TO_CACHE = [
   '/',
@@ -17,43 +17,43 @@ const URLS_TO_CACHE = [
   '/cropper.min.css',
 ];
 
-// List of brand logo URLs to pre-cache
+// Local static brand logo files to pre-cache
 const BRAND_LOGOS_TO_CACHE = [
-  'https://logo.clearbit.com/uniqlo.com',
-  'https://logo.clearbit.com/muji.com',
-  'https://logo.clearbit.com/zara.com',
-  'https://logo.clearbit.com/hm.com',
-  'https://logo.clearbit.com/gap.com',
-  'https://logo.clearbit.com/levi.com',
-  'https://logo.clearbit.com/nike.com',
-  'https://logo.clearbit.com/adidas.com',
-  'https://logo.clearbit.com/puma.com',
-  'https://logo.clearbit.com/newbalance.com',
-  'https://logo.clearbit.com/converse.com',
-  'https://logo.clearbit.com/vans.com',
-  'https://logo.clearbit.com/skechers.com',
-  'https://logo.clearbit.com/antasports.com',
-  'https://logo.clearbit.com/lining.com',
-  'https://logo.clearbit.com/fila.com',
-  'https://logo.clearbit.com/thenorthface.com',
-  'https://logo.clearbit.com/columbia.com',
-  'https://logo.clearbit.com/lululemon.com',
-  'https://logo.clearbit.com/massimodutti.com',
-  'https://logo.clearbit.com/montbell.jp',
-  'https://logo.clearbit.com/arcteryx.com',
-  'https://logo.clearbit.com/keenfootwear.com',
-  'https://logo.clearbit.com/nanamica.com',
-  'https://logo.clearbit.com/patagonia.com',
-  'https://logo.clearbit.com/mammut.com',
-  'https://logo.clearbit.com/salomon.com',
-  'https://logo.clearbit.com/merrell.com',
-  'https://logo.clearbit.com/hoka.com',
-  'https://logo.clearbit.com/on.com',
-  'https://logo.clearbit.com/blackdiamondequipment.com',
-  'https://logo.clearbit.com/snowpeak.com',
-  'https://logo.clearbit.com/deuter.com',
-  'https://logo.clearbit.com/osprey.com',
-  'https://logo.clearbit.com/jack-wolfskin.com',
+  '/assets/brand-logos/uniqlo.svg',
+  '/assets/brand-logos/muji.svg',
+  '/assets/brand-logos/zara.svg',
+  '/assets/brand-logos/h-m.svg',
+  '/assets/brand-logos/gap.svg',
+  '/assets/brand-logos/levi-s.svg',
+  '/assets/brand-logos/nike.svg',
+  '/assets/brand-logos/adidas.svg',
+  '/assets/brand-logos/puma.svg',
+  '/assets/brand-logos/new-balance.svg',
+  '/assets/brand-logos/converse.svg',
+  '/assets/brand-logos/vans.svg',
+  '/assets/brand-logos/skechers.svg',
+  '/assets/brand-logos/anta.svg',
+  '/assets/brand-logos/li-ning.svg',
+  '/assets/brand-logos/fila.svg',
+  '/assets/brand-logos/the-north-face.svg',
+  '/assets/brand-logos/columbia.svg',
+  '/assets/brand-logos/lululemon.svg',
+  '/assets/brand-logos/massimo-dutti.svg',
+  '/assets/brand-logos/mont-bell.svg',
+  '/assets/brand-logos/arc-teryx.svg',
+  '/assets/brand-logos/keen.svg',
+  '/assets/brand-logos/nanamica.svg',
+  '/assets/brand-logos/patagonia.svg',
+  '/assets/brand-logos/mammut.svg',
+  '/assets/brand-logos/salomon.svg',
+  '/assets/brand-logos/merrell.svg',
+  '/assets/brand-logos/hoka.svg',
+  '/assets/brand-logos/on.svg',
+  '/assets/brand-logos/black-diamond.svg',
+  '/assets/brand-logos/snow-peak.svg',
+  '/assets/brand-logos/deuter.svg',
+  '/assets/brand-logos/osprey.svg',
+  '/assets/brand-logos/jack-wolfskin.svg',
 ];
 
 // Install event - cache resources
@@ -75,11 +75,11 @@ self.addEventListener('install', (event) => {
         )
       );
     }).then(() => {
-      // Try to pre-cache logos (but don't fail if network is unavailable)
+      // Pre-cache local logos (do not fail install if some files are missing)
       return caches.open(LOGO_CACHE).then((cache) => {
         return Promise.allSettled(
           BRAND_LOGOS_TO_CACHE.map(url =>
-            fetch(url, { mode: 'no-cors' })
+            fetch(url)
               .then(response => cache.put(url, response))
               .catch(() => {/* Silent fail, logo will be fetched on demand */})
           )
@@ -94,13 +94,13 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Only handle our domain
-  if (url.origin !== self.location.origin && !url.href.includes('clearbit.com')) {
+  // Only handle same-origin requests
+  if (url.origin !== self.location.origin) {
     return;
   }
 
-  // Strategy: Cache first for logos, Network first for app files
-  if (url.href.includes('logo.clearbit.com')) {
+  // Strategy: Cache first for local logos, Network first for app files
+  if (url.pathname.startsWith('/assets/brand-logos/')) {
     // Logo caching: Cache first, fallback to network
     event.respondWith(
       caches.match(request)

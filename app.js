@@ -499,9 +499,8 @@ function buildPresetBrandLogos() {
   const result = {};
   for (const brand of PRESET_LOGO_BRANDS) {
     const key = normalizeBrandKey(brand);
-    // In CN network environments, remote logo CDNs are often unstable.
-    // Use deterministic offline SVG logos by default for reliable rendering.
-    result[key] = buildOfflineBrandLogo(brand);
+    // Prefer local static logo package; fallback to deterministic offline SVG.
+    result[key] = PRESET_BRAND_LOGOS_CDN[key] || buildOfflineBrandLogo(brand);
   }
   return result;
 }
@@ -531,8 +530,8 @@ function loadBrandLogos() {
     const stored = parsed && typeof parsed === "object" ? parsed : {};
     const preset = buildPresetBrandLogos();
     return {
-      ...preset,
       ...stored,
+      ...preset,
     };
   } catch {
     return buildPresetBrandLogos();
