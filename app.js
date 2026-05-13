@@ -58,8 +58,11 @@ const GITHUB_SYNC_CONFIG = {
   }
 };
 
-// AI 背景去除配置（支持 remove.bg 或 Render rembg）
+// AI 背景去除配置（本地 MediaPipe 分割，无需服务器）
 const REMBG_CONFIG = {
+  isLocalMode: true, // 使用本地处理，无需远程 API
+  
+  // 保留这些方法以兼容旧代码，但在本地模式下不使用
   getApiUrl: function() {
     return localStorage.getItem('rembgApiUrl') || '';
   },
@@ -73,7 +76,7 @@ const REMBG_CONFIG = {
   },
   
   isEnabled: function() {
-    return !!this.getApiUrl();
+    return true; // 本地模式总是启用
   }
 };
 
@@ -2766,42 +2769,23 @@ async function removeBackgroundWithAI() {
     return;
   }
 
-  if (!REMBG_CONFIG.isEnabled()) {
-    setImageEditorHint("请先配置 rembg API 端点。");
-    return;
-  }
-
-  setImageEditorHint("正在处理图片，请稍候...");
+  setImageEditorHint("正在处理图片，请稍候（首次会加载模型，可能需要 10-20 秒）...");
   refs.editorRemoveBgBtn.disabled = true;
 
   try {
-    // 将canvas转换为data URL
-    const imageDataUrl = imageEditorState.sourceCanvas.toDataURL("image/png");
+    // 使用本地 MediaPipe 分割
+    const outputCanvas = await removeBackgroundWithMediaPipe(imageEditorState.sourceCanvas);
     
-    // 调用 rembg API
-    const resultDataUrl = await removeImageBackground(imageDataUrl);
+    // 将结果加载到编辑器 canvas
+    const ctx = imageEditorState.sourceCanvas.getContext("2d");
+    imageEditorState.sourceCanvas.width = outputCanvas.width;
+    imageEditorState.sourceCanvas.height = outputCanvas.height;
+    ctx.drawImage(outputCanvas, 0, 0);
     
-    if (resultDataUrl) {
-      // 将结果加载到canvas
-      const img = new Image();
-      img.onload = function() {
-        const ctx = imageEditorState.sourceCanvas.getContext("2d");
-        imageEditorState.sourceCanvas.width = img.width;
-        imageEditorState.sourceCanvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-        
-        saveEditorHistoryState();
-        renderImageEditorCanvas();
-        setImageEditorHint("背景去除成功！");
-        refs.editorRemoveBgBtn.disabled = false;
-      };
-      img.onerror = function() {
-        throw new Error("无法加载处理后的图片");
-      };
-      img.src = resultDataUrl;
-    } else {
-      throw new Error("处理失败，请重试");
-    }
+    saveEditorHistoryState();
+    renderImageEditorCanvas();
+    setImageEditorHint("背景去除成功！");
+    refs.editorRemoveBgBtn.disabled = false;
   } catch (error) {
     console.error("AI背景去除错误:", error);
     setImageEditorHint(`背景去除失败: ${error.message}`);
@@ -4444,37 +4428,34 @@ function bindEvents() {
 // ============== AI 抠图功能 ==============
 
 /**
- * 调用 Render rembg API 去除图片背景
+ * 调用本地 MediaPipe 分割去除图片背景
  * @param {string} imageData - base64 编码的图片数据或 data URL
  * @returns {Promise<string|null>} 返回处理后的 PNG data URL，失败返回 null
  */
 async function removeImageBackground(imageData) {
   try {
     if (!REMBG_CONFIG.isEnabled()) {
-      showAppMessage('请先配置 rembg API 端点');
+      showAppMessage('背景去除功能不可用');
       return null;
     }
 
-    showAppMessage('正在处理图片...', false, 0); // 显示无进度条的加载提示
+    showAppMessage('正在处理图片，请稍候...', false, 0); // 显示无进度条的加载提示
 
-    const response = await fetch(`${REMBG_CONFIG.getApiUrl()}/remove-bg`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageData }),
-      timeout: 60000 // 60 秒超时
+    // 创建临时图片对象
+    const img = new Image();
+    img.src = imageData;
+    
+    // 等待图片加载
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const result = await response.json();
-    if (result.success && result.image) {
-      return result.image;
-    } else {
-      throw new Error(result.error || '背景去除失败');
-    }
+    // 使用 MediaPipe 去除背景
+    const outputCanvas = await removeBackgroundWithMediaPipe(img);
+    const resultDataUrl = canvasToDataUrl(outputCanvas);
+    
+    return resultDataUrl;
   } catch (error) {
     console.error('[Background Removal] Error:', error);
     showAppMessage(`背景去除失败: ${error.message}`);
@@ -4490,25 +4471,41 @@ async function removeImageBackground(imageData) {
 async function removeMultipleBackgrounds(imageDataArray) {
   try {
     if (!REMBG_CONFIG.isEnabled()) {
-      showAppMessage('请先配置 rembg API 端点');
+      showAppMessage('背景去除功能不可用');
       return [];
     }
 
     showAppMessage(`正在处理 ${imageDataArray.length} 张图片...`, false, 0);
 
-    const response = await fetch(`${REMBG_CONFIG.getApiUrl()}/remove-bg-batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: imageDataArray }),
-      timeout: 120000 // 2 分钟超时
-    });
-
-    const result = await response.json();
-    if (result.success) {
-      return result.results || [];
-    } else {
-      throw new Error(result.error || '批处理失败');
+    const results = [];
+    for (let i = 0; i < imageDataArray.length; i++) {
+      try {
+        showAppMessage(`正在处理 ${i + 1}/${imageDataArray.length}...`, false, 0);
+        
+        const img = new Image();
+        img.src = imageDataArray[i];
+        
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        
+        const outputCanvas = await removeBackgroundWithMediaPipe(img);
+        const resultDataUrl = canvasToDataUrl(outputCanvas);
+        
+        results.push({
+          success: true,
+          image: resultDataUrl
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          error: error.message
+        });
+      }
     }
+    
+    return results;
   } catch (error) {
     console.error('[Batch Background Removal] Error:', error);
     showAppMessage(`批处理失败: ${error.message}`);
