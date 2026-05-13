@@ -1,6 +1,6 @@
 // Service Worker for caching brand logos and resources for offline access
-const CACHE_NAME = 'wardrobe-cache-v1';
-const LOGO_CACHE = 'wardrobe-logos-v1';
+const CACHE_NAME = 'wardrobe-cache-v2';
+const LOGO_CACHE = 'wardrobe-logos-v2';
 
 const URLS_TO_CACHE = [
   '/',
@@ -8,7 +8,8 @@ const URLS_TO_CACHE = [
   '/app.js',
   '/styles.css',
   '/brand_logos_cdn.js',
-  '/backgroundremoval.min.js',
+  '/cropper.min.js',
+  '/cropper.min.css',
 ];
 
 // List of brand logo URLs to pre-cache
@@ -54,7 +55,20 @@ const BRAND_LOGOS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(URLS_TO_CACHE);
+      return Promise.allSettled(
+        URLS_TO_CACHE.map((url) =>
+          fetch(url)
+            .then((response) => {
+              if (!response || !response.ok) {
+                throw new Error(`cache-failed:${url}`);
+              }
+              return cache.put(url, response);
+            })
+            .catch(() => {
+              // Ignore individual failures so one missing file does not break SW install.
+            })
+        )
+      );
     }).then(() => {
       // Try to pre-cache logos (but don't fail if network is unavailable)
       return caches.open(LOGO_CACHE).then((cache) => {
@@ -114,7 +128,23 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) {
+            return cached;
+          }
+          if (request.mode === 'navigate') {
+            const cachedIndex = await caches.match('/index.html');
+            if (cachedIndex) {
+              return cachedIndex;
+            }
+          }
+          return new Response('Offline', {
+            status: 503,
+            statusText: 'Offline',
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        })
     );
   }
 });

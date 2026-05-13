@@ -38,6 +38,26 @@ const API_CONFIG = {
   }
 };
 
+// GitHub 同步配置 - 用户在设置中配置
+const GITHUB_SYNC_CONFIG = {
+  getWorkerUrl: function() {
+    // 用户可通过 localStorage 设置中间层 URL（例如 Cloudflare Worker）
+    return localStorage.getItem('githubSyncWorkerUrl') || '';
+  },
+  
+  setWorkerUrl: function(url) {
+    if (url) {
+      localStorage.setItem('githubSyncWorkerUrl', url);
+    } else {
+      localStorage.removeItem('githubSyncWorkerUrl');
+    }
+  },
+  
+  isEnabled: function() {
+    return !!this.getWorkerUrl();
+  }
+};
+
 // 主要品牌（精简常用，不预置过多）
 const MAJOR_BRAND_LIST = [
   "Uniqlo",
@@ -119,6 +139,14 @@ const state = {
   importFileType: "json",
   importScope: "items",
   currentRecommendations: [],
+  manualLookDraft: {
+    topId: "",
+    bottomId: "",
+    shoesId: "",
+    accessoryId: "",
+  },
+  manualLookPickerTarget: "",
+  pendingDeleteLookId: "",
   conflictResolver: null,
   conflictStrategy: "ask",
   brandLibraryMultiSelectMode: false,
@@ -145,6 +173,8 @@ const imageEditorState = {
 };
 
 let imageEditorRenderScheduled = false;
+let pendingAppConfirmAction = null;
+let pendingAppPromptSubmit = null;
 
 const refs = {
         editorDoCutoutBtn: document.getElementById("editorDoCutoutBtn"),
@@ -180,6 +210,25 @@ const refs = {
   recommendCount: document.getElementById("recommendCount"),
   favoriteList: document.getElementById("favoriteList"),
   favoriteCount: document.getElementById("favoriteCount"),
+  openManualLookBtn: document.getElementById("openManualLookBtn"),
+  manualLookDialog: document.getElementById("manualLookDialog"),
+  manualLookForm: document.getElementById("manualLookForm"),
+  closeManualLookDialog: document.getElementById("closeManualLookDialog"),
+  cancelManualLook: document.getElementById("cancelManualLook"),
+  manualLookTitle: document.getElementById("manualLookTitle"),
+  pickManualTopBtn: document.getElementById("pickManualTopBtn"),
+  pickManualBottomBtn: document.getElementById("pickManualBottomBtn"),
+  pickManualShoesBtn: document.getElementById("pickManualShoesBtn"),
+  pickManualAccessoryBtn: document.getElementById("pickManualAccessoryBtn"),
+  manualLookTopPreview: document.getElementById("manualLookTopPreview"),
+  manualLookBottomPreview: document.getElementById("manualLookBottomPreview"),
+  manualLookShoesPreview: document.getElementById("manualLookShoesPreview"),
+  manualLookAccessoryPreview: document.getElementById("manualLookAccessoryPreview"),
+  manualLookPickerDialog: document.getElementById("manualLookPickerDialog"),
+  manualLookPickerTitle: document.getElementById("manualLookPickerTitle"),
+  manualLookPickerList: document.getElementById("manualLookPickerList"),
+  closeManualLookPickerDialog: document.getElementById("closeManualLookPickerDialog"),
+  clearManualLookPickerBtn: document.getElementById("clearManualLookPickerBtn"),
   weatherSelect: document.getElementById("weatherSelect"),
   sceneSelect: document.getElementById("sceneSelect"),
   lockTopSelect: document.getElementById("lockTopSelect"),
@@ -287,6 +336,28 @@ const refs = {
   keepIncomingBtn: document.getElementById("keepIncomingBtn"),
   keepAllConflictsBtn: document.getElementById("keepAllConflictsBtn"),
   replaceAllConflictsBtn: document.getElementById("replaceAllConflictsBtn"),
+  favoriteDeleteConfirmDialog: document.getElementById("favoriteDeleteConfirmDialog"),
+  closeFavoriteDeleteConfirmDialog: document.getElementById("closeFavoriteDeleteConfirmDialog"),
+  cancelFavoriteDeleteBtn: document.getElementById("cancelFavoriteDeleteBtn"),
+  confirmFavoriteDeleteBtn: document.getElementById("confirmFavoriteDeleteBtn"),
+  appMessageDialog: document.getElementById("appMessageDialog"),
+  appMessageTitle: document.getElementById("appMessageTitle"),
+  appMessageText: document.getElementById("appMessageText"),
+  closeAppMessageDialog: document.getElementById("closeAppMessageDialog"),
+  confirmAppMessageBtn: document.getElementById("confirmAppMessageBtn"),
+  appConfirmDialog: document.getElementById("appConfirmDialog"),
+  appConfirmTitle: document.getElementById("appConfirmTitle"),
+  appConfirmText: document.getElementById("appConfirmText"),
+  closeAppConfirmDialog: document.getElementById("closeAppConfirmDialog"),
+  cancelAppConfirmBtn: document.getElementById("cancelAppConfirmBtn"),
+  confirmAppConfirmBtn: document.getElementById("confirmAppConfirmBtn"),
+  appPromptDialog: document.getElementById("appPromptDialog"),
+  appPromptTitle: document.getElementById("appPromptTitle"),
+  appPromptText: document.getElementById("appPromptText"),
+  appPromptInput: document.getElementById("appPromptInput"),
+  closeAppPromptDialog: document.getElementById("closeAppPromptDialog"),
+  cancelAppPromptBtn: document.getElementById("cancelAppPromptBtn"),
+  confirmAppPromptBtn: document.getElementById("confirmAppPromptBtn"),
   importJsonBtn: document.getElementById("importJsonBtn"),
   importCsvBtn: document.getElementById("importCsvBtn"),
   exportBtn: document.getElementById("exportBtn"),
@@ -342,11 +413,18 @@ function loadFavoriteLooks() {
 }
 
 function saveItems() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+    scheduleGitHubSync();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function saveFavoriteLooks() {
   localStorage.setItem(FAVORITE_LOOKS_KEY, JSON.stringify(state.favoriteLooks));
+  scheduleGitHubSync();
 }
 
 function normalizeBrandName(value) {
@@ -439,6 +517,7 @@ function loadBrandCatalog() {
 
 function saveBrandCatalog() {
   localStorage.setItem(BRAND_CATALOG_KEY, JSON.stringify(dedupeBrands(state.brandCatalog)));
+  scheduleGitHubSync();
 }
 
 function loadBrandLogos() {
@@ -458,6 +537,7 @@ function loadBrandLogos() {
 
 function saveBrandLogos() {
   localStorage.setItem(BRAND_LOGOS_KEY, JSON.stringify(state.brandLogos));
+  scheduleGitHubSync();
 }
 
 function getBrandLogo(brandName) {
@@ -606,21 +686,18 @@ function deleteBrand(brandName) {
     return;
   }
 
-  const ok = window.confirm(`是否确认删除该品牌：${brand}？`);
-  if (!ok) {
-    return;
-  }
+  openAppConfirm(`是否确认删除该品牌：${brand}？`, () => {
+    state.brandCatalog = state.brandCatalog.filter((entry) => entry.toLowerCase() !== brand.toLowerCase());
+    const key = normalizeBrandKey(brand);
+    if (state.brandLogos[key]) {
+      delete state.brandLogos[key];
+      saveBrandLogos();
+    }
+    saveBrandCatalog();
 
-  state.brandCatalog = state.brandCatalog.filter((entry) => entry.toLowerCase() !== brand.toLowerCase());
-  const key = normalizeBrandKey(brand);
-  if (state.brandLogos[key]) {
-    delete state.brandLogos[key];
-    saveBrandLogos();
-  }
-  saveBrandCatalog();
-
-  renderBrandOptions();
-  renderBrandLibrary();
+    renderBrandOptions();
+    renderBrandLibrary();
+  }, "删除品牌");
 }
 
 function getSelectedBrandsInLibrary() {
@@ -646,23 +723,20 @@ function deleteSelectedBrands() {
 
   const preview = selectedBrands.slice(0, 4).join("、");
   const suffix = selectedBrands.length > 4 ? " 等" : "";
-  const ok = window.confirm(`是否确认删除该品牌（共 ${selectedBrands.length} 个）：${preview}${suffix}？`);
-  if (!ok) {
-    return;
-  }
-
-  const removedSet = new Set(selectedBrands.map((brand) => normalizeBrandKey(brand)));
-  state.brandCatalog = state.brandCatalog.filter((entry) => !removedSet.has(normalizeBrandKey(entry)));
-  for (const key of removedSet) {
-    if (state.brandLogos[key]) {
-      delete state.brandLogos[key];
+  openAppConfirm(`是否确认删除该品牌（共 ${selectedBrands.length} 个）：${preview}${suffix}？`, () => {
+    const removedSet = new Set(selectedBrands.map((brand) => normalizeBrandKey(brand)));
+    state.brandCatalog = state.brandCatalog.filter((entry) => !removedSet.has(normalizeBrandKey(entry)));
+    for (const key of removedSet) {
+      if (state.brandLogos[key]) {
+        delete state.brandLogos[key];
+      }
     }
-  }
-  saveBrandCatalog();
-  saveBrandLogos();
+    saveBrandCatalog();
+    saveBrandLogos();
 
-  renderBrandOptions();
-  renderBrandLibrary();
+    renderBrandOptions();
+    renderBrandLibrary();
+  }, "批量删除品牌");
 }
 
 function openBrandLibraryDialog() {
@@ -717,7 +791,10 @@ function normalizeFavoriteLook(raw) {
     title: String(raw?.title || "我的收藏穿搭").trim() || "我的收藏穿搭",
     top: String(raw?.top || "未选择上装").trim() || "未选择上装",
     bottom: String(raw?.bottom || "未选择下装").trim() || "未选择下装",
+    shoes: String(raw?.shoes || "鞋履：可自由搭配").trim() || "鞋履：可自由搭配",
     accessory: String(raw?.accessory || "未选择配饰").trim() || "未选择配饰",
+    topImage: String(raw?.topImage || ""),
+    bottomImage: String(raw?.bottomImage || ""),
     pinned: Boolean(raw?.pinned),
     createdAt: raw?.createdAt || new Date().toISOString(),
   };
@@ -733,6 +810,7 @@ function mergeFavoriteLooks(importedLooks) {
         entry.title === normalizedLook.title &&
         entry.top === normalizedLook.top &&
         entry.bottom === normalizedLook.bottom &&
+        entry.shoes === normalizedLook.shoes &&
         entry.accessory === normalizedLook.accessory;
       return sameId || sameContent;
     });
@@ -758,6 +836,72 @@ function formatPrice(value) {
     return "¥0.00";
   }
   return `¥${number.toFixed(2)}`;
+}
+
+function showAppMessage(message, title = "提示") {
+  if (refs.appMessageTitle) {
+    refs.appMessageTitle.textContent = title;
+  }
+  if (refs.appMessageText) {
+    refs.appMessageText.textContent = String(message || "");
+  }
+  refs.appMessageDialog?.showModal();
+}
+
+function closeAppMessageDialog() {
+  refs.appMessageDialog?.close();
+}
+
+function openAppConfirm(message, onConfirm, title = "请确认") {
+  pendingAppConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
+  if (refs.appConfirmTitle) {
+    refs.appConfirmTitle.textContent = title;
+  }
+  if (refs.appConfirmText) {
+    refs.appConfirmText.textContent = String(message || "");
+  }
+  refs.appConfirmDialog?.showModal();
+}
+
+function closeAppConfirmDialog() {
+  pendingAppConfirmAction = null;
+  refs.appConfirmDialog?.close();
+}
+
+function confirmAppConfirmDialog() {
+  const action = pendingAppConfirmAction;
+  closeAppConfirmDialog();
+  if (action) {
+    action();
+  }
+}
+
+function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容") {
+  pendingAppPromptSubmit = typeof onSubmit === "function" ? onSubmit : null;
+  if (refs.appPromptTitle) {
+    refs.appPromptTitle.textContent = title;
+  }
+  if (refs.appPromptText) {
+    refs.appPromptText.textContent = String(message || "");
+  }
+  if (refs.appPromptInput) {
+    refs.appPromptInput.value = String(defaultValue || "");
+  }
+  refs.appPromptDialog?.showModal();
+}
+
+function closeAppPromptDialog() {
+  pendingAppPromptSubmit = null;
+  refs.appPromptDialog?.close();
+}
+
+function confirmAppPromptDialog() {
+  const submit = pendingAppPromptSubmit;
+  const value = String(refs.appPromptInput?.value || "");
+  closeAppPromptDialog();
+  if (submit) {
+    submit(value);
+  }
 }
 
 function allowedSeasonsForWeather(weather) {
@@ -1207,7 +1351,13 @@ function renderFavoriteLooks() {
       card.querySelector(".recommend-card__title").textContent = `${pinPrefix}${look.title}`;
       lines[0].textContent = look.top;
       lines[1].textContent = look.bottom;
-      lines[2].textContent = look.accessory;
+      lines[2].textContent = look.shoes || "鞋履：可自由搭配";
+      lines[3].textContent = look.accessory;
+      // 设置图片
+      const imgTop = card.querySelector(".recommend-card__img--top");
+      const imgBottom = card.querySelector(".recommend-card__img--bottom");
+      if (imgTop) imgTop.src = look.topImage || "";
+      if (imgBottom) imgBottom.src = look.bottomImage || "";
       const actionWrap = card.querySelector(".card-actions");
       actionWrap.innerHTML = `
         <button class="btn btn--ghost card-btn" data-action="pin-look" type="button">${
@@ -1331,6 +1481,7 @@ function clearImagePreview() {
 function renderImageGallery() {
   refs.imageGallery.innerHTML = "";
   const images = state.imageDataList;
+  const isEditing = Boolean(state.editingId);
 
   if (!images.length) {
     refs.previewImage.src = "";
@@ -1357,11 +1508,13 @@ function renderImageGallery() {
   images.forEach((img, index) => {
     const thumb = document.createElement("div");
     thumb.className = `image-thumb${index === safeIndex ? " image-thumb--cover" : ""}`;
+    const deleteBtn = isEditing ? `<button class="image-thumb__delete-btn" type="button" data-delete-index="${index}" title="删除此图片">✕</button>` : "";
     thumb.innerHTML = `
       <img src="${img}" alt="上传图片 ${index + 1}" />
       <button class="image-thumb__btn" type="button" data-cover-index="${index}">${
         index === safeIndex ? "当前封面" : "设为封面"
       }</button>
+      ${deleteBtn}
     `;
     refs.imageGallery.append(thumb);
   });
@@ -1373,6 +1526,46 @@ function readFileAsDataUrl(file) {
     reader.onload = () => resolve(String(reader.result || ""));
     reader.onerror = () => reject(new Error("read-failed"));
     reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * 智能压缩图片：
+ * - 如果有透明像素（PNG等），保留PNG
+ * - 如果无透明像素，转换为JPEG 90%压缩
+ */
+function compressDataUrl(dataUrl) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      // 创建临时canvas加载图片，检查透明度
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = image.naturalWidth || image.width;
+      tempCanvas.height = image.naturalHeight || image.height;
+      const ctx = tempCanvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, 0, 0, tempCanvas.width, tempCanvas.height);
+      
+      // 检测是否有透明像素
+      const pixels = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
+      let hasTransparentPixel = false;
+      for (let i = 3; i < pixels.length; i += 4) {
+        if (pixels[i] < 255) {
+          hasTransparentPixel = true;
+          break;
+        }
+      }
+      
+      // 格式决策：无透明 → JPEG 90%，有透明 → PNG
+      const compressedUrl = hasTransparentPixel
+        ? tempCanvas.toDataURL("image/png")
+        : tempCanvas.toDataURL("image/jpeg", 0.90);
+      
+      resolve(compressedUrl);
+    };
+    image.onerror = () => resolve(dataUrl); // 加载失败则返回原图
+    image.src = dataUrl;
   });
 }
 
@@ -1399,8 +1592,16 @@ async function onImageChange(event) {
   }
 
   try {
-    state.imageDataList = await Promise.all(files.map((item) => readFileAsDataUrl(item)));
-    state.coverImageIndex = 0;
+    // 读取图片并压缩
+    const dataUrls = await Promise.all(files.map((item) => readFileAsDataUrl(item)));
+    const compressedUrls = await Promise.all(dataUrls.map((url) => compressDataUrl(url)));
+    // 追加新图片而不是替换（如果是新增模式且列表为空则不追加）
+    if (state.imageDataList.length === 0) {
+      state.imageDataList = compressedUrls;
+      state.coverImageIndex = 0;
+    } else {
+      state.imageDataList.push(...compressedUrls);
+    }
     renderImageGallery();
   } catch {
     clearImagePreview();
@@ -1615,24 +1816,58 @@ function renderImageEditorCanvas() {
     srcWidth * scale,
     srcHeight * scale
   );
-  ctx.restore();
 
+  // 在restore之前绘制裁剪框，这样才能应用正确的变换
   if (imageEditorState.cropRect && imageEditorState.isCropMode) {
     const rect = imageEditorState.cropRect;
+    
+    // 图片在变换后坐标系中的范围
+    const imgLeft = -srcWidth / 2 * scale;
+    const imgTop = -srcHeight / 2 * scale;
+    const imgRight = srcWidth / 2 * scale;
+    const imgBottom = srcHeight / 2 * scale;
+    
+    // 裁剪框的坐标
+    const cropLeft = rect.x * scale + imgLeft;
+    const cropTop = rect.y * scale + imgTop;
+    const cropRight = (rect.x + rect.w) * scale + imgLeft;
+    const cropBottom = (rect.y + rect.h) * scale + imgTop;
+    const cropWidth = rect.w * scale;
+    const cropHeight = rect.h * scale;
+    
     ctx.save();
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, rect.x * scale, displayCanvas.height);
-    ctx.fillRect((rect.x + rect.w) * scale, 0, displayCanvas.width - (rect.x + rect.w) * scale, displayCanvas.height);
-    ctx.fillRect(rect.x * scale, 0, rect.w * scale, rect.y * scale);
-    ctx.fillRect(rect.x * scale, (rect.y + rect.h) * scale, rect.w * scale, displayCanvas.height - (rect.y + rect.h) * scale);
+    
+    // 左暗区：从图片左边到裁剪框左边
+    if (cropLeft > imgLeft) {
+      ctx.fillRect(imgLeft, imgTop, cropLeft - imgLeft, imgBottom - imgTop);
+    }
+    
+    // 右暗区：从裁剪框右边到图片右边
+    if (cropRight < imgRight) {
+      ctx.fillRect(cropRight, imgTop, imgRight - cropRight, imgBottom - imgTop);
+    }
+    
+    // 上暗区：从图片上边到裁剪框上边（只在裁剪框宽度范围内）
+    if (cropTop > imgTop) {
+      ctx.fillRect(cropLeft, imgTop, cropWidth, cropTop - imgTop);
+    }
+    
+    // 下暗区：从裁剪框下边到图片下边（只在裁剪框宽度范围内）
+    if (cropBottom < imgBottom) {
+      ctx.fillRect(cropLeft, cropBottom, cropWidth, imgBottom - cropBottom);
+    }
+    
     ctx.globalAlpha = 1;
     ctx.strokeStyle = "#1f6f5f";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
-    ctx.strokeRect(rect.x * scale, rect.y * scale, rect.w * scale, rect.h * scale);
+    ctx.strokeRect(cropLeft, cropTop, cropWidth, cropHeight);
     ctx.restore();
   }
+
+  ctx.restore();
 
   if (imageEditorState.activeTool === "eraser" && imageEditorState.eraserCursorPos) {
     const cur = imageEditorState.eraserCursorPos;
@@ -1779,12 +2014,25 @@ function toggleImageCropMode() {
   if (!willEnable) {
     imageEditorState.cropRect = null;
   } else {
-    const canvas = refs.imageEditorCanvas;
+    // 根据源图片大小初始化裁剪框，而不是显示canvas的大小
+    const sourceCanvas = imageEditorState.sourceCanvas;
+    const displayCanvas = refs.imageEditorCanvas;
+    const srcWidth = Math.max(1, sourceCanvas.width);
+    const srcHeight = Math.max(1, sourceCanvas.height);
+    const displayWidth = Math.max(1, displayCanvas?.width || srcWidth);
+    const displayHeight = Math.max(1, displayCanvas?.height || srcHeight);
+    
+    // 计算显示canvas到源canvas的缩放比例
+    const scale = {
+      x: srcWidth / displayWidth,
+      y: srcHeight / displayHeight
+    };
+    
     imageEditorState.cropRect = {
-      x: 1,
-      y: 1,
-      w: canvas.width - 2,
-      h: canvas.height - 2,
+      x: 0,
+      y: 0,
+      w: srcWidth,      // 使用源图片的实际宽度
+      h: srcHeight,     // 使用源图片的实际高度
     };
     saveEditorHistoryState();
   }
@@ -1841,7 +2089,7 @@ function applyImageCrop() {
   }
 
   const sourceCanvas = imageEditorState.sourceCanvas;
-  const displayCanvas = refs.imageEditorCanvas;
+  const sourceCtx = sourceCanvas.getContext("2d");
   const sx = Math.max(0, Math.floor(rect.x));
   const sy = Math.max(0, Math.floor(rect.y));
   const sw = Math.max(1, Math.floor(rect.w));
@@ -1849,15 +2097,22 @@ function applyImageCrop() {
   const clampedW = Math.min(sw, sourceCanvas.width - sx);
   const clampedH = Math.min(sh, sourceCanvas.height - sy);
 
+  if (clampedW <= 0 || clampedH <= 0) {
+    return;
+  }
+
+  // 像素级裁剪，避免drawImage插值导致额外像素变化
+  const croppedData = sourceCtx.getImageData(sx, sy, clampedW, clampedH);
+
   const nextCanvas = document.createElement("canvas");
   nextCanvas.width = clampedW;
   nextCanvas.height = clampedH;
   const nextCtx = nextCanvas.getContext("2d");
-  nextCtx.drawImage(sourceCanvas, sx, sy, clampedW, clampedH, 0, 0, clampedW, clampedH);
+  nextCtx.putImageData(croppedData, 0, 0);
 
   sourceCanvas.width = clampedW;
   sourceCanvas.height = clampedH;
-  sourceCanvas.getContext("2d").drawImage(nextCanvas, 0, 0);
+  sourceCanvas.getContext("2d").putImageData(croppedData, 0, 0);
 
   imageEditorState.cropRect = null;
   imageEditorState.isCropMode = false;
@@ -2243,12 +2498,129 @@ function applySmartCutout() {
       smoothedAlpha[y * width + x] = Math.round(sum / Math.max(1, count));
     }
   }
-  for (let index = 0, pixelIndex = 0; index < smoothedAlpha.length; index += 1, pixelIndex += 4) {
-    const alpha = smoothedAlpha[index];
-    // 动态阈值：有标记时更严格(155)，无标记时更宽松(145)
-    const threshold = (hasFgPoints || hasBgPoints) ? 155 : 145;
-    pixels[pixelIndex + 3] = alpha >= threshold ? 255 : 0;
+
+  // === 方案1：颜色污染清除（防止白色残留） ===
+  // 检测半透明区域是否混有背景色污染，自动清理
+  function removeColorContamination() {
+    const contaminationRadius = 2;
+    const tempAlpha = new Uint8ClampedArray(smoothedAlpha);
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        const alpha = smoothedAlpha[idx];
+        
+        // 只处理半透明像素（30-225范围内）
+        if (alpha > 30 && alpha < 225) {
+          const pixelIdx = idx * 4;
+          const currentColor = [pixels[pixelIdx], pixels[pixelIdx + 1], pixels[pixelIdx + 2]];
+          
+          // 检查周围像素，找最常见的非半透明颜色
+          const surroundingColors = [];
+          for (let oy = -contaminationRadius; oy <= contaminationRadius; oy++) {
+            for (let ox = -contaminationRadius; ox <= contaminationRadius; ox++) {
+              if (ox === 0 && oy === 0) continue;
+              const nx = x + ox, ny = y + oy;
+              if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+              
+              const nidx = ny * width + nx;
+              const nAlpha = smoothedAlpha[nidx];
+              if (nAlpha > 225 || nAlpha < 30) { // 完全透明或完全不透明
+                const npixelIdx = nidx * 4;
+                surroundingColors.push([
+                  pixels[npixelIdx],
+                  pixels[npixelIdx + 1],
+                  pixels[npixelIdx + 2]
+                ]);
+              }
+            }
+          }
+          
+          // 如果周围有很多背景色（接近白色或黑色），则降低该像素alpha
+          if (surroundingColors.length > 2) {
+            const avgColor = meanRgb(surroundingColors);
+            const isLightBg = avgColor[0] > 200 && avgColor[1] > 200 && avgColor[2] > 200;
+            const isDarkBg = avgColor[0] < 50 && avgColor[1] < 50 && avgColor[2] < 50;
+            
+            if (isLightBg || isDarkBg) {
+              const colorSimilarity = Math.sqrt(distSq(currentColor, avgColor)) / 255;
+              if (colorSimilarity < 0.3) { // 颜色接近背景
+                tempAlpha[idx] = Math.round(alpha * 0.6); // 削弱alpha
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    return tempAlpha;
   }
+  
+  const cleanedAlpha = removeColorContamination();
+
+  // === 方案2：Otsu自适应阈值（自动计算最优分割点） ===
+  function computeOtsuThreshold(alphaArray) {
+    const histogram = new Uint32Array(256);
+    for (let i = 0; i < alphaArray.length; i++) {
+      histogram[alphaArray[i]]++;
+    }
+    
+    const total = alphaArray.length;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+    
+    let sumB = 0;
+    let wB = 0;
+    let maxVar = 0;
+    let threshold = 0;
+    
+    for (let t = 0; t < 256; t++) {
+      wB += histogram[t];
+      if (wB === 0) continue;
+      
+      const wF = total - wB;
+      if (wF === 0) break;
+      
+      sumB += t * histogram[t];
+      const muB = sumB / wB;
+      const muF = (sum - sumB) / wF;
+      
+      const variance = wB * wF * (muB - muF) * (muB - muF);
+      if (variance > maxVar) {
+        maxVar = variance;
+        threshold = t;
+      }
+    }
+    
+    return threshold;
+  }
+  
+  // 计算自适应阈值，但保持一个合理的范围
+  let adaptiveThreshold = computeOtsuThreshold(cleanedAlpha);
+  // 将Otsu阈值限制在可接受范围内（130-180之间）
+  adaptiveThreshold = Math.max(130, Math.min(180, adaptiveThreshold));
+  // 如果有标记点，稍微提高阈值以更严格
+  if (hasFgPoints || hasBgPoints) {
+    adaptiveThreshold = Math.min(180, adaptiveThreshold + 10);
+  }
+
+  // 应用自适应阈值处理
+  for (let index = 0, pixelIndex = 0; index < cleanedAlpha.length; index += 1, pixelIndex += 4) {
+    const alpha = cleanedAlpha[index];
+    pixels[pixelIndex + 3] = alpha >= adaptiveThreshold ? 255 : 0;
+  }
+
+    // 清理完全透明像素的RGB值，防止白点/污点显示
+    for (let index = 0, pixelIndex = 0; index < cleanedAlpha.length; index += 1, pixelIndex += 4) {
+      if (pixels[pixelIndex + 3] === 0) {
+        // 对于完全透明的像素，设置RGB为黑色（0,0,0）
+        pixels[pixelIndex] = 0;
+        pixels[pixelIndex + 1] = 0;
+        pixels[pixelIndex + 2] = 0;
+      }
+    }
 
   ctx.putImageData(imageData, 0, 0);
   saveEditorHistoryState();
@@ -2303,11 +2675,38 @@ function eraseImageAtPoint(sourcePoint, previousPoint) {
 }
 
 function applyImageEditorToPreview() {
+  if (imageEditorState.isCropMode && imageEditorState.cropRect) {
+    applyImageCrop();
+  }
+
   const sourceCanvas = imageEditorState.sourceCanvas;
   if (!sourceCanvas.width || !sourceCanvas.height) {
     return;
   }
-  const updatedDataUrl = sourceCanvas.toDataURL("image/png");
+  
+  // 智能压缩：检查是否有透明像素
+  // - 有透明（抠图）→ PNG 保质量
+  // - 无透明（裁剪/旋转等）→ JPEG 90% 压缩空间
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const pixels = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
+  
+  let hasTransparentPixel = false;
+  for (let i = 3; i < pixels.length; i += 4) {
+    if (pixels[i] < 255) {
+      hasTransparentPixel = true;
+      break;
+    }
+  }
+  
+  let updatedDataUrl;
+  if (hasTransparentPixel) {
+    // 有透明像素（抠图结果）：保留PNG无损
+    updatedDataUrl = sourceCanvas.toDataURL("image/png");
+  } else {
+    // 无透明像素：用JPEG压缩（质量90%）
+    updatedDataUrl = sourceCanvas.toDataURL("image/jpeg", 0.90);
+  }
+  
   state.imageDataList[state.coverImageIndex] = updatedDataUrl;
   renderImageGallery();
   forceCloseImageEditorDialog();
@@ -2430,28 +2829,28 @@ function executeCutoutFromMode() {
   const hasFg = imageEditorState.fgPoints.length > 0;
   const hasBg = imageEditorState.bgPoints.length > 0;
 
-  // 如果没有任何标记，提示用户
-  if (!hasFg && !hasBg) {
-    setImageEditorHint("请先标记前景或背景后执行抠图。");
-    return;
-  }
-
   // 如果同时有前景和背景标记，执行精准抠图（2轮refinement）
   if (hasFg && hasBg) {
     setImageEditorHint("正在执行精准抠图（2轮refinement），请稍候...");
     applySmartCutout();
     applySmartCutout();
     setImageEditorHint("精准抠图完成。可继续标记后再次执行，或退出抠图模式。");
-  } else {
+  } else if (hasFg || hasBg) {
     // 只有前景或背景标记时，执行单轮抠图
     setImageEditorHint("正在执行抠图（单轮），请稍候...");
     applySmartCutout();
     setImageEditorHint("抠图完成。建议同时标记前景和背景后再执行以获得精准效果，或继续标记后再次执行。");
+  } else {
+    // 没有任何标记时，使用K-means自动分割
+    setImageEditorHint("正在执行自动抠图，请稍候...");
+    applySmartCutout();
+    setImageEditorHint("自动抠图完成。建议标记前景和背景后再执行以获得精准效果。");
   }
 
-  // 重置标记点
+  // 重置标记点并隐藏
   imageEditorState.fgPoints = [];
   imageEditorState.bgPoints = [];
+  renderImageEditorCanvas();
 }
 
 function addCutoutMarkPoint(point) {
@@ -2528,7 +2927,11 @@ function onImageEditorCanvasMouseDown(event) {
     return;
   }
   event.preventDefault();
-  const point = getEditorCanvasPoint(event);
+  
+  // 将显示坐标转换到源图片坐标
+  const displayPoint = getEditorCanvasPoint(event);
+  const sourcePoint = getSourceCanvasPointFromDisplayPoint(displayPoint);
+  const point = sourcePoint;
   const rect = imageEditorState.cropRect;
   const edgeThreshold = 12;
 
@@ -2597,7 +3000,9 @@ function onImageEditorCanvasMouseMove(event) {
   }
 
   if (imageEditorState.isDragging && imageEditorState.dragStart) {
-    const point = getEditorCanvasPoint(event);
+    const displayPoint = getEditorCanvasPoint(event);
+    const sourcePoint = getSourceCanvasPointFromDisplayPoint(displayPoint);
+    const point = sourcePoint;
     const rect = imageEditorState.dragStart.originalRect;
     const delta = {
       x: point.x - imageEditorState.dragStart.point.x,
@@ -2605,15 +3010,16 @@ function onImageEditorCanvasMouseMove(event) {
     };
     const edge = imageEditorState.dragStart.edge;
 
+    // 允许裁剪框向外移动（不限制为0，但保持最小大小）
     if (edge === "tl" || edge === "t" || edge === "tr") {
-      imageEditorState.cropRect.y = Math.max(0, rect.y + delta.y);
+      imageEditorState.cropRect.y = rect.y + delta.y;
       imageEditorState.cropRect.h = Math.max(20, rect.h - delta.y);
     }
     if (edge === "bl" || edge === "b" || edge === "br") {
       imageEditorState.cropRect.h = Math.max(20, rect.h + delta.y);
     }
     if (edge === "tl" || edge === "l" || edge === "bl") {
-      imageEditorState.cropRect.x = Math.max(0, rect.x + delta.x);
+      imageEditorState.cropRect.x = rect.x + delta.x;
       imageEditorState.cropRect.w = Math.max(20, rect.w - delta.x);
     }
     if (edge === "tr" || edge === "r" || edge === "br") {
@@ -2624,7 +3030,9 @@ function onImageEditorCanvasMouseMove(event) {
 
     requestRenderImageEditorCanvas();
   } else if (imageEditorState.isCropMode && imageEditorState.cropRect) {
-    const point = getEditorCanvasPoint(event);
+    const displayPoint = getEditorCanvasPoint(event);
+    const sourcePoint = getSourceCanvasPointFromDisplayPoint(displayPoint);
+    const point = sourcePoint;
     const rect = imageEditorState.cropRect;
     const edgeThreshold = 12;
     const dx = Math.min(Math.abs(point.x - rect.x), Math.abs(point.x - (rect.x + rect.w)));
@@ -2701,8 +3109,9 @@ function onAddSubmit(event) {
   // 优先使用自定义颜色，否则使用select中的颜色
   const customColor = String(refs.customColorInput.value || "").trim();
   const selectedColor = customColor ? customColor : String(formData.get("color") || "");
+  const editingEntry = state.editingId ? state.items.find((entry) => entry.id === state.editingId) : null;
 
-  const payload = normalizeItem({
+  let payload = normalizeItem({
     name: String(formData.get("name") || "").trim(),
     brand: String(formData.get("brand") || "").trim(),
     size: String(formData.get("size") || "").trim(),
@@ -2714,7 +3123,23 @@ function onAddSubmit(event) {
     image: state.imageDataList[state.coverImageIndex] || "",
   });
 
+  // 编辑场景下，若表单字段因历史数据不匹配而为空，则回退到原始值
+  if (editingEntry) {
+    payload = normalizeItem({
+      ...editingEntry,
+      ...payload,
+      name: payload.name || editingEntry.name || "",
+      brand: payload.brand || editingEntry.brand || "",
+      size: payload.size || editingEntry.size || "",
+      season: payload.season || editingEntry.season || "四季",
+      color: payload.color || editingEntry.color || "",
+      image: payload.image || editingEntry.image || "",
+      images: payload.images?.length ? payload.images : (Array.isArray(editingEntry.images) ? editingEntry.images : []),
+    });
+  }
+
   if (!payload.name || !payload.brand || !payload.size || !payload.season || !Number.isFinite(payload.price)) {
+    showAppMessage("请完善名称、品牌、尺码、季节和价格后再保存。", "保存失败");
     return;
   }
 
@@ -2737,15 +3162,24 @@ function onAddSubmit(event) {
     });
   }
 
-  saveItems();
-  renderBrandOptions();
-  renderCategories();
-  renderClothes();
-  renderLockOptions();
-  renderRecommendations();
-  renderFavoriteLooks();
-  resetAddForm();
+  const savedOk = saveItems();
+  if (!savedOk) {
+    showAppMessage("保存失败：图片数据过大，浏览器本地存储空间不足。请减少图片数量、降低图片尺寸，或删除部分旧衣物后重试。", "保存失败");
+    return;
+  }
+  // 先关闭弹窗，避免后续渲染异常造成“点击无反应”体验
   forceCloseAddDialog();
+
+  try {
+    renderBrandOptions();
+    renderCategories();
+    renderClothes();
+    renderLockOptions();
+    renderRecommendations();
+    renderFavoriteLooks();
+  } catch {
+    showAppMessage("保存成功，但页面刷新时发生异常，请手动刷新页面查看最新结果。", "提示");
+  }
 }
 
 function openCreateBrandDialog() {
@@ -2797,16 +3231,14 @@ async function onCreateBrandSubmit(event) {
 
   // 如果没有上传Logo，询问用户是否保存
   if (!file) {
-    const confirm = window.confirm("未上传Logo，是否保存？保存后Logo将显示品牌缩写徽章。");
-    if (!confirm) {
-      return;
-    }
-    // 用户确认保存，不设置Logo（使用SVG缩写徽章）
-    ensureBrandInCatalog(brandName);
-    renderBrandOptions();
-    renderBrandLibrary();
-    setAddBrandValue(brandName);
-    closeCreateBrandDialog();
+    openAppConfirm("未上传Logo，是否保存？保存后Logo将显示品牌缩写徽章。", () => {
+      // 用户确认保存，不设置Logo（使用SVG缩写徽章）
+      ensureBrandInCatalog(brandName);
+      renderBrandOptions();
+      renderBrandLibrary();
+      setAddBrandValue(brandName);
+      closeCreateBrandDialog();
+    }, "新增品牌");
     return;
   }
 
@@ -2819,7 +3251,7 @@ async function onCreateBrandSubmit(event) {
     setAddBrandValue(brandName);
     closeCreateBrandDialog();
   } catch {
-    window.alert("品牌Logo上传失败，请重试。");
+    showAppMessage("品牌Logo上传失败，请重试。", "上传失败");
   }
 }
 
@@ -2829,19 +3261,16 @@ function deleteItem(itemId) {
     return;
   }
 
-  const ok = window.confirm(`确认删除 ${item.name} 吗？`);
-  if (!ok) {
-    return;
-  }
-
-  state.items = state.items.filter((entry) => entry.id !== itemId);
-  saveItems();
-  renderBrandOptions();
-  renderCategories();
-  renderClothes();
-  renderLockOptions();
-  renderRecommendations();
-  renderFavoriteLooks();
+  openAppConfirm(`确认删除 ${item.name} 吗？`, () => {
+    state.items = state.items.filter((entry) => entry.id !== itemId);
+    saveItems();
+    renderBrandOptions();
+    renderCategories();
+    renderClothes();
+    renderLockOptions();
+    renderRecommendations();
+    renderFavoriteLooks();
+  }, "删除服装");
 }
 
 function onClothesAction(event) {
@@ -2989,11 +3418,15 @@ function renderRecommendations() {
       card.dataset.planIndex = String(plans.indexOf(plan));
       const lines = card.querySelectorAll(".recommend-card__line");
       card.querySelector(".recommend-card__title").textContent = plan.title;
-      lines[0].textContent = `上衣：${plan.top.name}（${plan.top.brand} · ${plan.top.color} · ${plan.top.season}）`;
-      lines[1].textContent = `下装：${plan.bottom.name}（${plan.bottom.brand} · ${plan.bottom.color} · ${plan.bottom.season}）`;
-      lines[2].textContent = plan.accessory
-        ? `配饰：${plan.accessory.name}（${plan.accessory.brand} · ${plan.accessory.color} · ${plan.accessory.season}）`
-        : "配饰：可自由搭配";
+      lines[0].textContent = `上衣：${plan.top.name}（${plan.top.brand}）`;
+      lines[1].textContent = `下装：${plan.bottom.name}（${plan.bottom.brand}）`;
+      lines[2].textContent = "鞋履：可自由搭配";
+      lines[3].textContent = plan.accessory ? `配饰：${plan.accessory.name}（${plan.accessory.brand}）` : "配饰：可自由搭配";
+      // 设置图片
+      const imgTop = card.querySelector(".recommend-card__img--top");
+      const imgBottom = card.querySelector(".recommend-card__img--bottom");
+      if (imgTop) imgTop.src = plan.top.image || "";
+      if (imgBottom) imgBottom.src = plan.bottom.image || "";
       refs.recommendList.append(card);
     }
   }
@@ -3012,15 +3445,211 @@ function saveLook(planIndex) {
     title: plan.title,
     top: `上衣：${plan.top.name}（${plan.top.brand} · ${plan.top.color} · ${plan.top.season}）`,
     bottom: `下装：${plan.bottom.name}（${plan.bottom.brand} · ${plan.bottom.color} · ${plan.bottom.season}）`,
+    shoes: "鞋履：可自由搭配",
     accessory: plan.accessory
       ? `配饰：${plan.accessory.name}（${plan.accessory.brand} · ${plan.accessory.color} · ${plan.accessory.season}）`
       : "配饰：可自由搭配",
+    topImage: plan.top.image || "",
+    bottomImage: plan.bottom.image || "",
     createdAt: new Date().toISOString(),
   };
+
+  state.favoriteLooks.unshift(normalizeFavoriteLook(look));
+  saveFavoriteLooks();
+  renderFavoriteLooks();
+}
+
+function getManualLookItemsByTarget(target) {
+  if (target === "top") {
+    return state.items.filter((item) => item.category === "短袖上衣" || item.category === "长袖上衣");
+  }
+  if (target === "bottom") {
+    return state.items.filter((item) => item.category === "长裤" || item.category === "短裤");
+  }
+  if (target === "shoes") {
+    return state.items.filter((item) => item.category === "鞋履");
+  }
+  if (target === "accessory") {
+    return state.items.filter((item) => item.category === "配饰");
+  }
+  return [];
+}
+
+function renderManualLookDraftUi() {
+  const top = getItemById(state.manualLookDraft.topId);
+  const bottom = getItemById(state.manualLookDraft.bottomId);
+  const shoes = getItemById(state.manualLookDraft.shoesId);
+  const accessory = getItemById(state.manualLookDraft.accessoryId);
+
+  if (refs.pickManualTopBtn) {
+    refs.pickManualTopBtn.textContent = top ? `${top.name}（${top.brand}）` : "选择上装";
+  }
+  if (refs.pickManualBottomBtn) {
+    refs.pickManualBottomBtn.textContent = bottom ? `${bottom.name}（${bottom.brand}）` : "选择下装";
+  }
+  if (refs.pickManualShoesBtn) {
+    refs.pickManualShoesBtn.textContent = shoes ? `${shoes.name}（${shoes.brand}）` : "选择鞋履";
+  }
+  if (refs.pickManualAccessoryBtn) {
+    refs.pickManualAccessoryBtn.textContent = accessory ? `${accessory.name}（${accessory.brand}）` : "选择配饰";
+  }
+
+  const previewMap = [
+    [refs.manualLookTopPreview, top],
+    [refs.manualLookBottomPreview, bottom],
+    [refs.manualLookShoesPreview, shoes],
+    [refs.manualLookAccessoryPreview, accessory],
+  ];
+  for (const [imgEl, item] of previewMap) {
+    if (!imgEl) {
+      continue;
+    }
+    if (item?.image) {
+      imgEl.src = item.image;
+      imgEl.hidden = false;
+    } else {
+      imgEl.src = "";
+      imgEl.hidden = true;
+    }
+  }
+}
+
+function renderManualLookPickerList() {
+  const target = state.manualLookPickerTarget;
+  const list = getManualLookItemsByTarget(target);
+  refs.manualLookPickerList.innerHTML = "";
+
+  if (refs.clearManualLookPickerBtn) {
+    refs.clearManualLookPickerBtn.hidden = target === "top" || target === "bottom";
+  }
+
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "该分类暂无服装，请先添加。";
+    refs.manualLookPickerList.append(empty);
+    return;
+  }
+
+  for (const item of list) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "manual-look-picker-item";
+    button.dataset.pickItemId = item.id;
+    button.innerHTML = `
+      <img src="${item.image || ""}" alt="${item.name}" />
+      <span>${item.name}</span>
+      <small>${item.brand}</small>
+    `;
+    refs.manualLookPickerList.append(button);
+  }
+}
+
+function openManualLookPicker(target) {
+  state.manualLookPickerTarget = target;
+  const titleMap = {
+    top: "选择上装",
+    bottom: "选择下装",
+    shoes: "选择鞋履",
+    accessory: "选择配饰",
+  };
+  if (refs.manualLookPickerTitle) {
+    refs.manualLookPickerTitle.textContent = titleMap[target] || "选择服装";
+  }
+  renderManualLookPickerList();
+  refs.manualLookPickerDialog?.showModal();
+}
+
+function closeManualLookPickerDialog() {
+  refs.manualLookPickerDialog?.close();
+}
+
+function applyManualLookSelection(itemId) {
+  const target = state.manualLookPickerTarget;
+  if (!target) {
+    return;
+  }
+  if (target === "top") {
+    state.manualLookDraft.topId = itemId;
+  } else if (target === "bottom") {
+    state.manualLookDraft.bottomId = itemId;
+  } else if (target === "shoes") {
+    state.manualLookDraft.shoesId = itemId;
+  } else if (target === "accessory") {
+    state.manualLookDraft.accessoryId = itemId;
+  }
+  renderManualLookDraftUi();
+  closeManualLookPickerDialog();
+}
+
+function onManualLookPickerClick(event) {
+  const itemButton = event.target.closest("button[data-pick-item-id]");
+  if (!itemButton) {
+    return;
+  }
+  const itemId = String(itemButton.dataset.pickItemId || "");
+  if (!itemId) {
+    return;
+  }
+  applyManualLookSelection(itemId);
+}
+
+function openManualLookDialog() {
+  const hasTop = getManualLookItemsByTarget("top").length > 0;
+  const hasBottom = getManualLookItemsByTarget("bottom").length > 0;
+  if (!hasTop || !hasBottom) {
+    showAppMessage("请先在衣柜中至少添加1件上装和1件下装，再手动保存穿搭。", "无法添加穿搭");
+    return;
+  }
+
+  state.manualLookDraft = {
+    topId: "",
+    bottomId: "",
+    shoesId: "",
+    accessoryId: "",
+  };
+  if (refs.manualLookTitle) {
+    refs.manualLookTitle.value = "";
+  }
+  renderManualLookDraftUi();
+  refs.manualLookDialog?.showModal();
+}
+
+function closeManualLookDialog() {
+  refs.manualLookDialog?.close();
+}
+
+function onManualLookSubmit(event) {
+  event.preventDefault();
+  const top = getItemById(state.manualLookDraft.topId);
+  const bottom = getItemById(state.manualLookDraft.bottomId);
+  const shoes = getItemById(state.manualLookDraft.shoesId) || null;
+  const accessory = getItemById(state.manualLookDraft.accessoryId) || null;
+
+  if (!top || !bottom) {
+    showAppMessage("请完整选择上装和下装。", "无法保存穿搭");
+    return;
+  }
+
+  const customTitle = String(refs.manualLookTitle?.value || "").trim();
+  const look = normalizeFavoriteLook({
+    id: `look-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    title: customTitle || `手动穿搭 ${state.favoriteLooks.length + 1}`,
+    top: `上衣：${top.name}（${top.brand} · ${top.color} · ${top.season}）`,
+    bottom: `下装：${bottom.name}（${bottom.brand} · ${bottom.color} · ${bottom.season}）`,
+    shoes: shoes ? `鞋履：${shoes.name}（${shoes.brand} · ${shoes.color} · ${shoes.season}）` : "鞋履：可自由搭配",
+    accessory: accessory
+      ? `配饰：${accessory.name}（${accessory.brand} · ${accessory.color} · ${accessory.season}）`
+      : "配饰：可自由搭配",
+    topImage: top.image || "",
+    bottomImage: bottom.image || "",
+    createdAt: new Date().toISOString(),
+  });
 
   state.favoriteLooks.unshift(look);
   saveFavoriteLooks();
   renderFavoriteLooks();
+  closeManualLookDialog();
 }
 
 function deleteLook(lookId) {
@@ -3035,13 +3664,14 @@ function renameLook(lookId) {
     return;
   }
   const current = state.favoriteLooks[index].title;
-  const nextTitle = window.prompt("输入新的穿搭名称：", current);
-  if (!nextTitle) {
-    return;
-  }
-  state.favoriteLooks[index].title = nextTitle.trim() || current;
-  saveFavoriteLooks();
-  renderFavoriteLooks();
+  openAppPrompt("输入新的穿搭名称：", current, (nextTitle) => {
+    if (!nextTitle) {
+      return;
+    }
+    state.favoriteLooks[index].title = nextTitle.trim() || current;
+    saveFavoriteLooks();
+    renderFavoriteLooks();
+  }, "重命名穿搭");
 }
 
 function togglePinLook(lookId) {
@@ -3052,6 +3682,26 @@ function togglePinLook(lookId) {
   state.favoriteLooks[index].pinned = !state.favoriteLooks[index].pinned;
   saveFavoriteLooks();
   renderFavoriteLooks();
+}
+
+function openFavoriteDeleteConfirmDialog(lookId) {
+  state.pendingDeleteLookId = String(lookId || "");
+  refs.favoriteDeleteConfirmDialog?.showModal();
+}
+
+function closeFavoriteDeleteConfirmDialog() {
+  state.pendingDeleteLookId = "";
+  refs.favoriteDeleteConfirmDialog?.close();
+}
+
+function confirmFavoriteDelete() {
+  const lookId = state.pendingDeleteLookId;
+  if (!lookId) {
+    closeFavoriteDeleteConfirmDialog();
+    return;
+  }
+  deleteLook(lookId);
+  closeFavoriteDeleteConfirmDialog();
 }
 
 function onRecommendAction(event) {
@@ -3074,7 +3724,7 @@ function onRecommendAction(event) {
     const card = actionButton.closest(".recommend-card");
     const lookId = card?.dataset.favoriteId;
     if (lookId) {
-      deleteLook(lookId);
+      openFavoriteDeleteConfirmDialog(lookId);
     }
     return;
   }
@@ -3403,7 +4053,7 @@ function onImportFileChange(event) {
           : {};
 
       if (imported.length === 0) {
-        window.alert("导入文件中没有可导入的数据。");
+        showAppMessage("导入文件中没有可导入的数据。", "导入提示");
         return;
       }
 
@@ -3446,7 +4096,7 @@ function onImportFileChange(event) {
       syncBrandCatalogFromItems(state.items);
 
       if (shouldApplyFullScope && !hasFullBackupData) {
-        window.alert("当前文件只包含衣物数据，已按仅衣物方式导入；收藏穿搭和配置快照未变更。");
+        showAppMessage("当前文件只包含衣物数据，已按仅衣物方式导入；收藏穿搭和配置快照未变更。", "导入提示");
       }
 
       if (state.activeCategory !== "all") {
@@ -3467,9 +4117,9 @@ function onImportFileChange(event) {
       const modeText = state.importMode === "overwrite" ? "覆盖" : "合并";
       const replaceText = state.importMode === "merge" ? `，替换 ${replaceCount} 件` : "";
       const scopeText = shouldApplyFullScope && hasFullBackupData ? "，已同步收藏穿搭与配置快照" : "";
-      window.alert(`已${modeText}导入，实际更新 ${changedCount} 件${replaceText}${scopeText}。`);
+      showAppMessage(`已${modeText}导入，实际更新 ${changedCount} 件${replaceText}${scopeText}。`, "导入完成");
     } catch {
-      window.alert("文件解析失败，请检查 JSON/CSV 格式。");
+      showAppMessage("文件解析失败，请检查 JSON/CSV 格式。", "导入失败");
     } finally {
       refs.importJsonInput.value = "";
     }
@@ -3521,6 +4171,10 @@ function onCategoryClick(event) {
 }
 
 function bindEvents() {
+  if (refs.addForm) {
+    refs.addForm.noValidate = true;
+  }
+
   refs.openAddFromHero.addEventListener("click", openAddDialog);
   refs.openBrandLibraryBtn.addEventListener("click", openBrandLibraryDialog);
   refs.openAddFab.addEventListener("click", openAddDialog);
@@ -3670,6 +4324,19 @@ function bindEvents() {
   refs.lockBottomSelect.addEventListener("change", renderRecommendations);
   refs.lockAccessorySelect.addEventListener("change", renderRecommendations);
   refs.refreshRecommend.addEventListener("click", renderRecommendations);
+  refs.openManualLookBtn?.addEventListener("click", openManualLookDialog);
+  refs.closeManualLookDialog?.addEventListener("click", closeManualLookDialog);
+  refs.cancelManualLook?.addEventListener("click", closeManualLookDialog);
+  refs.pickManualTopBtn?.addEventListener("click", () => openManualLookPicker("top"));
+  refs.pickManualBottomBtn?.addEventListener("click", () => openManualLookPicker("bottom"));
+  refs.pickManualShoesBtn?.addEventListener("click", () => openManualLookPicker("shoes"));
+  refs.pickManualAccessoryBtn?.addEventListener("click", () => openManualLookPicker("accessory"));
+  refs.closeManualLookPickerDialog?.addEventListener("click", closeManualLookPickerDialog);
+  refs.manualLookPickerList?.addEventListener("click", onManualLookPickerClick);
+  refs.clearManualLookPickerBtn?.addEventListener("click", () => {
+    applyManualLookSelection("");
+  });
+  refs.manualLookForm?.addEventListener("submit", onManualLookSubmit);
   refs.recommendList.addEventListener("click", onRecommendAction);
   refs.favoriteList.addEventListener("click", onRecommendAction);
 
@@ -3703,19 +4370,59 @@ function bindEvents() {
   refs.keepAllConflictsBtn.addEventListener("click", () => resolveConflictChoice("keep-all"));
   refs.replaceAllConflictsBtn.addEventListener("click", () => resolveConflictChoice("replace-all"));
   refs.closeConflictDialog.addEventListener("click", () => resolveConflictChoice("keep-existing"));
+  refs.closeFavoriteDeleteConfirmDialog?.addEventListener("click", closeFavoriteDeleteConfirmDialog);
+  refs.cancelFavoriteDeleteBtn?.addEventListener("click", closeFavoriteDeleteConfirmDialog);
+  refs.confirmFavoriteDeleteBtn?.addEventListener("click", confirmFavoriteDelete);
+  refs.closeAppMessageDialog?.addEventListener("click", closeAppMessageDialog);
+  refs.confirmAppMessageBtn?.addEventListener("click", closeAppMessageDialog);
+  refs.closeAppConfirmDialog?.addEventListener("click", closeAppConfirmDialog);
+  refs.cancelAppConfirmBtn?.addEventListener("click", closeAppConfirmDialog);
+  refs.confirmAppConfirmBtn?.addEventListener("click", confirmAppConfirmDialog);
+  refs.closeAppPromptDialog?.addEventListener("click", closeAppPromptDialog);
+  refs.cancelAppPromptBtn?.addEventListener("click", closeAppPromptDialog);
+  refs.confirmAppPromptBtn?.addEventListener("click", confirmAppPromptDialog);
   refs.conflictDialog.addEventListener("cancel", (event) => {
     event.preventDefault();
     resolveConflictChoice("keep-existing");
   });
+  refs.favoriteDeleteConfirmDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeFavoriteDeleteConfirmDialog();
+  });
+  refs.appMessageDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeAppMessageDialog();
+  });
+  refs.appConfirmDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeAppConfirmDialog();
+  });
+  refs.appPromptDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeAppPromptDialog();
+  });
   refs.importJsonInput.addEventListener("change", onImportFileChange);
   refs.refreshWeatherBtn.addEventListener("click", loadCurrentWeather);
   refs.imageGallery.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-cover-index]");
-    if (!button) {
+    // 处理设为封面
+    const coverBtn = event.target.closest("button[data-cover-index]");
+    if (coverBtn) {
+      state.coverImageIndex = Number(coverBtn.dataset.coverIndex || 0);
+      renderImageGallery();
       return;
     }
-    state.coverImageIndex = Number(button.dataset.coverIndex || 0);
-    renderImageGallery();
+    // 处理删除图片
+    const deleteBtn = event.target.closest("button[data-delete-index]");
+    if (deleteBtn) {
+      const index = Number(deleteBtn.dataset.deleteIndex);
+      state.imageDataList.splice(index, 1);
+      // 调整 coverImageIndex 以防超出范围
+      if (state.coverImageIndex >= state.imageDataList.length && state.imageDataList.length > 0) {
+        state.coverImageIndex = state.imageDataList.length - 1;
+      }
+      renderImageGallery();
+      return;
+    }
   });
 
   // 点击任意位置关闭导出/导入菜单
@@ -3730,7 +4437,10 @@ function bindEvents() {
   });
 }
 
-function init() {
+async function init() {
+  // 启动时从 GitHub 拉取远端数据并与本地合并
+  await syncWithGitHub();
+  
   initOptions();
   syncBrandCatalogFromItems(state.items);
   purgeBlockedBrands();
@@ -3743,6 +4453,153 @@ function init() {
   renderRecommendations();
   renderFavoriteLooks();
   loadCurrentWeather();
+}
+
+// ============ GitHub 同步函数 ============
+
+let gitHubSyncTimer = null;
+let gitHubSyncPending = false;
+
+/**
+ * 防抖触发 GitHub 同步（避免频繁上传）
+ */
+function scheduleGitHubSync() {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    return;
+  }
+  
+  if (gitHubSyncTimer) {
+    clearTimeout(gitHubSyncTimer);
+  }
+  
+  gitHubSyncPending = true;
+  gitHubSyncTimer = setTimeout(() => {
+    pushToGitHub().catch(err => {
+      console.error('[GitHub Sync] Upload failed:', err.message);
+    });
+    gitHubSyncTimer = null;
+    gitHubSyncPending = false;
+  }, 5000); // 5秒防抖
+}
+
+/**
+ * 从 GitHub 拉取远端数据并与本地合并
+ */
+async function syncWithGitHub() {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    return;
+  }
+  
+  try {
+    const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
+    const response = await fetch(workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pull' })
+    });
+    
+    if (!response.ok) {
+      console.warn('[GitHub Sync] Pull failed:', response.status);
+      return;
+    }
+    
+    const data = await response.json();
+    if (data.items) {
+      mergeRemoteData(data);
+    }
+  } catch (err) {
+    console.error('[GitHub Sync] Pull error:', err.message);
+  }
+}
+
+/**
+ * 上传本地数据到 GitHub
+ */
+async function pushToGitHub() {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    return;
+  }
+  
+  try {
+    const payload = buildBackupPayload('full');
+    const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
+    
+    const response = await fetch(workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'push',
+        data: payload
+      })
+    });
+    
+    if (!response.ok) {
+      console.warn('[GitHub Sync] Push failed:', response.status);
+      return;
+    }
+    
+    console.log('[GitHub Sync] Push succeeded');
+  } catch (err) {
+    console.error('[GitHub Sync] Push error:', err.message);
+  }
+}
+
+/**
+ * 合并远端数据与本地数据
+ * 策略：远端数据在本地没有的项目合并，冲突时保留本地更新时间较新的
+ */
+function mergeRemoteData(remoteBackup) {
+  try {
+    if (!remoteBackup.items || !Array.isArray(remoteBackup.items)) {
+      return;
+    }
+    
+    // 合并衣物数据
+    const remoteItemsMap = new Map(remoteBackup.items.map(item => [item.id, item]));
+    state.items.forEach(localItem => {
+      const remoteItem = remoteItemsMap.get(localItem.id);
+      if (remoteItem && remoteItem.updatedAt && localItem.updatedAt) {
+        // 保留更新时间较新的版本
+        if (new Date(remoteItem.updatedAt) > new Date(localItem.updatedAt)) {
+          Object.assign(localItem, remoteItem);
+        }
+      }
+    });
+    
+    // 添加远端独有的项目
+    remoteBackup.items.forEach(remoteItem => {
+      if (!state.items.find(item => item.id === remoteItem.id)) {
+        state.items.push(normalizeItem(remoteItem));
+      }
+    });
+    
+    // 合并收藏的穿搭
+    if (remoteBackup.favoriteLooks && Array.isArray(remoteBackup.favoriteLooks)) {
+      const remoteLooksMap = new Map(remoteBackup.favoriteLooks.map(look => [look.id, look]));
+      state.favoriteLooks.forEach(localLook => {
+        const remoteLook = remoteLooksMap.get(localLook.id);
+        if (remoteLook && remoteLook.updatedAt && localLook.updatedAt) {
+          if (new Date(remoteLook.updatedAt) > new Date(localLook.updatedAt)) {
+            Object.assign(localLook, remoteLook);
+          }
+        }
+      });
+      
+      remoteBackup.favoriteLooks.forEach(remoteLook => {
+        if (!state.favoriteLooks.find(look => look.id === remoteLook.id)) {
+          state.favoriteLooks.push(remoteLook);
+        }
+      });
+    }
+    
+    // 保存合并结果
+    saveItems();
+    saveFavoriteLooks();
+    
+    console.log('[GitHub Sync] Merge completed');
+  } catch (err) {
+    console.error('[GitHub Sync] Merge error:', err.message);
+  }
 }
 
 init();

@@ -1,0 +1,6 @@
+name = "wardrobe-rembg"
+main = "github-sync-worker.js"
+compatibility_date = "2024-01-01"
+
+[env.production]
+name = "wardrobe-rembg"

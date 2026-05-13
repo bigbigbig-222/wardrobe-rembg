@@ -12,6 +12,34 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
+    <script>
+      // Recover from stale Service Worker/cache before app scripts run.
+      (function () {
+        if (!("serviceWorker" in navigator)) {
+          return;
+        }
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister().catch(() => false))))
+          .catch(() => []);
+
+        if ("caches" in window) {
+          caches
+            .keys()
+            .then((keys) => Promise.all(keys.map((key) => caches.delete(key).catch(() => false))))
+            .catch(() => []);
+        }
+
+        if (!sessionStorage.getItem("wardrobe-sw-recovered")) {
+          sessionStorage.setItem("wardrobe-sw-recovered", "1");
+          window.addEventListener("load", () => {
+            const url = new URL(window.location.href);
+            url.searchParams.set("recovered", Date.now().toString());
+            window.location.replace(url.toString());
+          });
+        }
+      })();
+    </script>
   </head>
   <body>
     <div class="bg-shape bg-shape-a" aria-hidden="true"></div>
@@ -160,6 +188,7 @@
         <section class="favorite-wrap" aria-labelledby="favoriteTitle">
           <div class="panel__top panel__top--sub">
             <h3 id="favoriteTitle">已收藏穿搭</h3>
+              <button id="openManualLookBtn" type="button">添加穿搭</button>
             <span class="result-pill" id="favoriteCount">收藏 0 套</span>
           </div>
           <div id="favoriteList" class="recommend-list"></div>
@@ -378,6 +407,58 @@
       </form>
     </dialog>
 
+    <dialog id="manualLookDialog" class="add-dialog">
+      <form method="dialog" class="dialog-card dialog-card--mini" id="manualLookForm" autocomplete="off">
+        <header class="dialog-card__header">
+          <h3>手动添加穿搭</h3>
+          <button class="close-btn" id="closeManualLookDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <label>
+            穿搭名称（可选）
+            <input id="manualLookTitle" type="text" maxlength="40" placeholder="例如：通勤简约黑白配" />
+          </label>
+          <div class="manual-look-row">
+            <span class="manual-look-row__label">上装</span>
+            <button class="manual-look-row__pick" id="pickManualTopBtn" type="button">选择上装</button>
+            <img class="manual-look-row__img" id="manualLookTopPreview" alt="上装预览" hidden />
+          </div>
+          <div class="manual-look-row">
+            <span class="manual-look-row__label">下装</span>
+            <button class="manual-look-row__pick" id="pickManualBottomBtn" type="button">选择下装</button>
+            <img class="manual-look-row__img" id="manualLookBottomPreview" alt="下装预览" hidden />
+          </div>
+          <div class="manual-look-row">
+            <span class="manual-look-row__label">鞋履（可选）</span>
+            <button class="manual-look-row__pick" id="pickManualShoesBtn" type="button">选择鞋履</button>
+            <img class="manual-look-row__img" id="manualLookShoesPreview" alt="鞋履预览" hidden />
+          </div>
+          <div class="manual-look-row">
+            <span class="manual-look-row__label">配饰（可选）</span>
+            <button class="manual-look-row__pick" id="pickManualAccessoryBtn" type="button">选择配饰</button>
+            <img class="manual-look-row__img" id="manualLookAccessoryPreview" alt="配饰预览" hidden />
+          </div>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelManualLook" type="button">取消</button>
+          <button class="btn btn--primary" type="submit">保存穿搭</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="manualLookPickerDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini" id="manualLookPickerCard">
+        <header class="dialog-card__header">
+          <h3 id="manualLookPickerTitle">选择服装</h3>
+          <button class="close-btn" id="closeManualLookPickerDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <button class="btn btn--ghost" id="clearManualLookPickerBtn" type="button" hidden>不选择</button>
+          <div class="manual-look-picker-list" id="manualLookPickerList"></div>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="importModeDialog" class="add-dialog">
       <div class="dialog-card dialog-card--mini">
         <header class="dialog-card__header">
@@ -444,6 +525,70 @@
       </div>
     </dialog>
 
+    <dialog id="favoriteDeleteConfirmDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3>取消收藏</h3>
+          <button class="close-btn" id="closeFavoriteDeleteConfirmDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label">确认取消收藏这套穿搭吗？</p>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelFavoriteDeleteBtn" type="button">取消</button>
+          <button class="btn btn--warn" id="confirmFavoriteDeleteBtn" type="button">确认删除</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="appMessageDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3 id="appMessageTitle">提示</h3>
+          <button class="close-btn" id="closeAppMessageDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label" id="appMessageText"></p>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--primary" id="confirmAppMessageBtn" type="button">我知道了</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="appConfirmDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3 id="appConfirmTitle">请确认</h3>
+          <button class="close-btn" id="closeAppConfirmDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label" id="appConfirmText"></p>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelAppConfirmBtn" type="button">取消</button>
+          <button class="btn btn--warn" id="confirmAppConfirmBtn" type="button">确认</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="appPromptDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3 id="appPromptTitle">输入内容</h3>
+          <button class="close-btn" id="closeAppPromptDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <p class="category-view-label" id="appPromptText"></p>
+          <input id="appPromptInput" type="text" maxlength="60" />
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelAppPromptBtn" type="button">取消</button>
+          <button class="btn btn--primary" id="confirmAppPromptBtn" type="button">确定</button>
+        </footer>
+      </div>
+    </dialog>
+
     <template id="clothingCardTemplate">
       <article class="clothing-card">
         <img class="clothing-card__img" alt="服装照片" />
@@ -462,29 +607,24 @@
 
     <template id="recommendCardTemplate">
       <article class="recommend-card">
-        <h3 class="recommend-card__title"></h3>
-        <p class="recommend-card__line"></p>
-        <p class="recommend-card__line"></p>
-        <p class="recommend-card__line"></p>
-        <div class="card-actions">
-          <button class="btn btn--ghost card-btn" data-action="save-look" type="button">收藏这套</button>
+        <div class="recommend-card__imgs">
+          <img class="recommend-card__img recommend-card__img--top" alt="上衣" />
+          <img class="recommend-card__img recommend-card__img--bottom" alt="下装" />
+        </div>
+        <div class="recommend-card__body">
+          <h3 class="recommend-card__title"></h3>
+          <p class="recommend-card__line"></p>
+          <p class="recommend-card__line"></p>
+          <p class="recommend-card__line"></p>
+          <p class="recommend-card__line"></p>
+          <div class="card-actions">
+            <button class="btn btn--ghost card-btn" data-action="save-look" type="button">收藏这套</button>
+          </div>
         </div>
       </article>
     </template>
 
-    <script src="backgroundremoval.min.js"></script>
     <script src="brand_logos_cdn.js"></script>
-    <script>
-      window.REMBG_API_URL = 'https://web-production-fc2c1.up.railway.app/remove_background';
-    </script>
     <script src="app.js"></script>
-    <script>
-      // Register Service Worker for offline support and caching
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('service-worker.js').catch(err => {
-          console.log('Service Worker registration failed:', err);
-        });
-      }
-    </script>
   </body>
 </html>
