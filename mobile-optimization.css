@@ -37,7 +37,7 @@
     min-height: 32px !important;
     min-width: 0 !important;
     padding: 0 3px !important;
-    font-size: 10px !important;
+    font-size: 9.8px !important;
     white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
@@ -48,7 +48,6 @@
   #openAddFromHero {
     flex: 1.35 1 0 !important;
     min-width: 0 !important;
-    font-size: 10.5px !important;
     padding: 0 6px !important;
     letter-spacing: -0.05px;
     text-overflow: clip !important;
@@ -56,9 +55,17 @@
 
   #openBrandLibraryBtn {
     flex: 0.82 1 0 !important;
-    font-size: 9px !important;
     padding: 0 2px !important;
     letter-spacing: -0.2px;
+  }
+
+  #brandFilterWrap .brand-filter-menu {
+    min-width: 180px !important;
+    max-width: 72vw !important;
+  }
+
+  #brandFilterWrap .brand-filter-option {
+    white-space: nowrap !important;
   }
 
   /* 2) 服装分类改为单行 */
