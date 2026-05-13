@@ -161,6 +161,7 @@ const imageEditorState = {
 let imageEditorRenderScheduled = false;
 let pendingAppConfirmAction = null;
 let pendingAppPromptSubmit = null;
+let pendingSyncDecisionContext = null;
 
 const refs = {
         editorDoCutoutBtn: document.getElementById("editorDoCutoutBtn"),
@@ -280,6 +281,7 @@ const refs = {
   imageEditorCanvas: document.getElementById("imageEditorCanvas"),
   openAddFromHero: document.getElementById("openAddFromHero"),
   openBrandLibraryBtn: document.getElementById("openBrandLibraryBtn"),
+  openSyncDataBtn: document.getElementById("openSyncDataBtn"),
   openAddFab: document.getElementById("openAddFab"),
   closeDialog: document.getElementById("closeDialog"),
   cancelAdd: document.getElementById("cancelAdd"),
@@ -337,6 +339,12 @@ const refs = {
   closeAppConfirmDialog: document.getElementById("closeAppConfirmDialog"),
   cancelAppConfirmBtn: document.getElementById("cancelAppConfirmBtn"),
   confirmAppConfirmBtn: document.getElementById("confirmAppConfirmBtn"),
+  syncDecisionDialog: document.getElementById("syncDecisionDialog"),
+  syncDiffSummaryText: document.getElementById("syncDiffSummaryText"),
+  closeSyncDecisionDialog: document.getElementById("closeSyncDecisionDialog"),
+  cancelSyncDecisionBtn: document.getElementById("cancelSyncDecisionBtn"),
+  chooseLocalSyncBtn: document.getElementById("chooseLocalSyncBtn"),
+  chooseRemoteSyncBtn: document.getElementById("chooseRemoteSyncBtn"),
   appPromptDialog: document.getElementById("appPromptDialog"),
   appPromptTitle: document.getElementById("appPromptTitle"),
   appPromptText: document.getElementById("appPromptText"),
@@ -398,19 +406,23 @@ function loadFavoriteLooks() {
   }
 }
 
-function saveItems() {
+function saveItems(options = {}) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
-    scheduleGitHubSync();
+    if (!options.skipSync) {
+      scheduleGitHubSync();
+    }
     return true;
   } catch {
     return false;
   }
 }
 
-function saveFavoriteLooks() {
+function saveFavoriteLooks(options = {}) {
   localStorage.setItem(FAVORITE_LOOKS_KEY, JSON.stringify(state.favoriteLooks));
-  scheduleGitHubSync();
+  if (!options.skipSync) {
+    scheduleGitHubSync();
+  }
 }
 
 function normalizeBrandName(value) {
@@ -501,9 +513,11 @@ function loadBrandCatalog() {
   }
 }
 
-function saveBrandCatalog() {
+function saveBrandCatalog(options = {}) {
   localStorage.setItem(BRAND_CATALOG_KEY, JSON.stringify(dedupeBrands(state.brandCatalog)));
-  scheduleGitHubSync();
+  if (!options.skipSync) {
+    scheduleGitHubSync();
+  }
 }
 
 function loadBrandLogos() {
@@ -521,9 +535,11 @@ function loadBrandLogos() {
   }
 }
 
-function saveBrandLogos() {
+function saveBrandLogos(options = {}) {
   localStorage.setItem(BRAND_LOGOS_KEY, JSON.stringify(state.brandLogos));
-  scheduleGitHubSync();
+  if (!options.skipSync) {
+    scheduleGitHubSync();
+  }
 }
 
 function getBrandLogo(brandName) {
@@ -4276,6 +4292,10 @@ function bindEvents() {
   refs.lockBottomSelect.addEventListener("change", renderRecommendations);
   refs.lockAccessorySelect.addEventListener("change", renderRecommendations);
   refs.refreshRecommend.addEventListener("click", renderRecommendations);
+  refs.openSyncDataBtn?.addEventListener("click", () => {
+    refs.ioMenu?.removeAttribute("open");
+    runSyncFlow("manual");
+  });
   refs.openManualLookBtn?.addEventListener("click", openManualLookDialog);
   refs.closeManualLookDialog?.addEventListener("click", closeManualLookDialog);
   refs.cancelManualLook?.addEventListener("click", closeManualLookDialog);
@@ -4330,6 +4350,10 @@ function bindEvents() {
   refs.closeAppConfirmDialog?.addEventListener("click", closeAppConfirmDialog);
   refs.cancelAppConfirmBtn?.addEventListener("click", closeAppConfirmDialog);
   refs.confirmAppConfirmBtn?.addEventListener("click", confirmAppConfirmDialog);
+  refs.closeSyncDecisionDialog?.addEventListener("click", closeSyncDecisionDialog);
+  refs.cancelSyncDecisionBtn?.addEventListener("click", closeSyncDecisionDialog);
+  refs.chooseLocalSyncBtn?.addEventListener("click", chooseLocalSyncDecision);
+  refs.chooseRemoteSyncBtn?.addEventListener("click", chooseRemoteSyncDecision);
   refs.closeAppPromptDialog?.addEventListener("click", closeAppPromptDialog);
   refs.cancelAppPromptBtn?.addEventListener("click", closeAppPromptDialog);
   refs.confirmAppPromptBtn?.addEventListener("click", confirmAppPromptDialog);
@@ -4348,6 +4372,10 @@ function bindEvents() {
   refs.appConfirmDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
     closeAppConfirmDialog();
+  });
+  refs.syncDecisionDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeSyncDecisionDialog();
   });
   refs.appPromptDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -4428,9 +4456,6 @@ async function removeImageBackground(imageData) {
 }
 
 async function init() {
-  // 启动时从 GitHub 拉取远端数据并与本地合并
-  await syncWithGitHub();
-  
   initOptions();
   syncBrandCatalogFromItems(state.items);
   purgeBlockedBrands();
@@ -4449,6 +4474,174 @@ async function init() {
 
 let gitHubSyncTimer = null;
 let gitHubSyncPending = false;
+let lastRemoteRevision = 0;
+
+/**
+ * 简单哈希函数（用于比对，不要求密码学强度）
+ */
+function simpleHash(str) {
+  let hash = 0;
+  const s = typeof str === 'string' ? str : JSON.stringify(str);
+  for (let i = 0; i < s.length; i++) {
+    const char = s.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+/**
+ * 计算单个衣物的稳定哈希
+ */
+function calculateItemHash(item) {
+  if (!item) return '';
+  const stable = {
+    name: item.name,
+    brand: item.brand,
+    size: item.size,
+    price: item.price,
+    category: item.category,
+    season: item.season,
+    color: item.color,
+    image: item.image,
+  };
+  return simpleHash(JSON.stringify(stable));
+}
+
+/**
+ * 计算单个收藏穿搭的哈希
+ */
+function calculateLookHash(look) {
+  if (!look) return '';
+  const stable = {
+    title: look.title,
+    top: look.top,
+    bottom: look.bottom,
+    shoes: look.shoes,
+    accessory: look.accessory,
+  };
+  return simpleHash(JSON.stringify(stable));
+}
+
+/**
+ * 计算品牌库的哈希
+ */
+function calculateBrandsHash(brands) {
+  const sorted = Array.isArray(brands) ? [...brands].sort() : [];
+  return simpleHash(JSON.stringify(sorted));
+}
+
+/**
+ * 计算品牌Logo集合的哈希
+ */
+function calculateBrandLogosHash(logos) {
+  const sorted = {};
+  const keys = Object.keys(logos || {}).sort();
+  keys.forEach((key) => {
+    sorted[key] = logos[key];
+  });
+  return simpleHash(JSON.stringify(sorted));
+}
+
+/**
+ * 构建轻量索引（用于低带宽对比）
+ */
+function buildLightweightIndex(snapshot) {
+  const index = {
+    revision: 0,
+    items: (snapshot.items || []).map((item) => ({
+      id: String(item.id || ''),
+      hash: calculateItemHash(item),
+    })),
+    itemsHash: simpleHash(
+      JSON.stringify((snapshot.items || []).map((item) => ({ id: item.id, hash: calculateItemHash(item) })))
+    ),
+    looks: (snapshot.favoriteLooks || []).map((look) => ({
+      id: String(look.id || ''),
+      hash: calculateLookHash(look),
+    })),
+    looksHash: simpleHash(
+      JSON.stringify((snapshot.favoriteLooks || []).map((look) => ({ id: look.id, hash: calculateLookHash(look) })))
+    ),
+    brandsHash: calculateBrandsHash(snapshot.config.brands),
+    brandLogosHash: calculateBrandLogosHash(snapshot.config.brandLogos),
+  };
+  return index;
+}
+
+/**
+ * 对比两个轻量索引
+ */
+function diffLightweightIndices(localIndex, remoteIndex) {
+  const localItemsMap = new Map((localIndex.items || []).map((item) => [item.id, item]));
+  const remoteItemsMap = new Map((remoteIndex.items || []).map((item) => [item.id, item]));
+
+  const looksMap = new Map((localIndex.looks || []).map((look) => [look.id, look]));
+  const remoteLooksMap = new Map((remoteIndex.looks || []).map((look) => [look.id, look]));
+
+  const localOnlyItemIds = [];
+  const remoteOnlyItemIds = [];
+  const changedItemIds = [];
+
+  localItemsMap.forEach((item, id) => {
+    if (!remoteItemsMap.has(id)) {
+      localOnlyItemIds.push(id);
+    } else {
+      const remoteItem = remoteItemsMap.get(id);
+      if (item.hash !== remoteItem.hash) {
+        changedItemIds.push(id);
+      }
+    }
+  });
+
+  remoteItemsMap.forEach((item, id) => {
+    if (!localItemsMap.has(id)) {
+      remoteOnlyItemIds.push(id);
+    }
+  });
+
+  const localOnlyLookIds = [];
+  const remoteOnlyLookIds = [];
+  const changedLookIds = [];
+
+  looksMap.forEach((look, id) => {
+    if (!remoteLooksMap.has(id)) {
+      localOnlyLookIds.push(id);
+    } else {
+      const remoteLook = remoteLooksMap.get(id);
+      if (look.hash !== remoteLook.hash) {
+        changedLookIds.push(id);
+      }
+    }
+  });
+
+  remoteLooksMap.forEach((look, id) => {
+    if (!looksMap.has(id)) {
+      remoteOnlyLookIds.push(id);
+    }
+  });
+
+  const hasDiff =
+    localIndex.itemsHash !== remoteIndex.itemsHash ||
+    localIndex.looksHash !== remoteIndex.looksHash ||
+    localIndex.brandsHash !== remoteIndex.brandsHash ||
+    localIndex.brandLogosHash !== remoteIndex.brandLogosHash;
+
+  return {
+    hasDiff,
+    items: {
+      localOnlyIds: localOnlyItemIds,
+      remoteOnlyIds: remoteOnlyItemIds,
+      changedIds: changedItemIds,
+    },
+    looks: {
+      localOnlyIds: localOnlyLookIds,
+      remoteOnlyIds: remoteOnlyLookIds,
+      changedIds: changedLookIds,
+    },
+    remoteRevision: remoteIndex.revision || 0,
+  };
+}
 
 /**
  * 防抖触发 GitHub 同步（避免频繁上传）
@@ -4464,7 +4657,7 @@ function scheduleGitHubSync() {
   
   gitHubSyncPending = true;
   gitHubSyncTimer = setTimeout(() => {
-    pushToGitHub().catch(err => {
+    pushLocalDiffToGitHub().catch(err => {
       console.error('[GitHub Sync] Upload failed:', err.message);
     });
     gitHubSyncTimer = null;
@@ -4472,123 +4665,469 @@ function scheduleGitHubSync() {
   }, 5000); // 5秒防抖
 }
 
-/**
- * 从 GitHub 拉取远端数据并与本地合并
- */
-async function syncWithGitHub() {
-  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
-    return;
-  }
-  
-  try {
-    const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
-    const response = await fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'pull' })
-    });
-    
-    if (!response.ok) {
-      console.warn('[GitHub Sync] Pull failed:', response.status);
+function normalizeBackupSnapshot(rawBackup) {
+  const raw = rawBackup && typeof rawBackup === "object" ? rawBackup : {};
+  const items = Array.isArray(raw.items) ? raw.items.map((item) => normalizeItem(item)) : [];
+  const favoriteLooks = Array.isArray(raw.favoriteLooks)
+    ? raw.favoriteLooks.map((look) => normalizeFavoriteLook(look))
+    : [];
+  const config = raw.config && typeof raw.config === "object" ? raw.config : {};
+  const brandsFromConfig = Array.isArray(config.brands)
+    ? config.brands.map((brand) => normalizeBrandName(brand)).filter(Boolean)
+    : [];
+  const brandsFromItems = items.map((item) => normalizeBrandName(item.brand)).filter(Boolean);
+  const brands = dedupeBrands([...brandsFromConfig, ...brandsFromItems]).filter((brand) => !isBlockedBrand(brand));
+  const rawBrandLogos = config.brandLogos && typeof config.brandLogos === "object" ? config.brandLogos : {};
+  const brandLogos = {};
+  Object.keys(rawBrandLogos).forEach((key) => {
+    const normalizedKey = normalizeBrandKey(key);
+    if (!normalizedKey || normalizedKey === normalizeBrandKey("A")) {
       return;
     }
-    
-    const data = await response.json();
-    if (data.items) {
-      mergeRemoteData(data);
-    }
-  } catch (err) {
-    console.error('[GitHub Sync] Pull error:', err.message);
+    brandLogos[normalizedKey] = String(rawBrandLogos[key] || "");
+  });
+
+  return {
+    items,
+    favoriteLooks,
+    config: {
+      brands,
+      brandLogos,
+    },
+  };
+}
+
+function buildLocalSnapshot() {
+  return normalizeBackupSnapshot(buildBackupPayload("full"));
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
   }
+  if (!value || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+function diffListById(localList, remoteList) {
+  const localMap = new Map();
+  const remoteMap = new Map();
+
+  (localList || []).forEach((entry) => {
+    if (entry?.id) {
+      localMap.set(String(entry.id), entry);
+    }
+  });
+  (remoteList || []).forEach((entry) => {
+    if (entry?.id) {
+      remoteMap.set(String(entry.id), entry);
+    }
+  });
+
+  const localOnlyIds = [];
+  const remoteOnlyIds = [];
+  const changedIds = [];
+
+  localMap.forEach((localEntry, id) => {
+    if (!remoteMap.has(id)) {
+      localOnlyIds.push(id);
+      return;
+    }
+    const remoteEntry = remoteMap.get(id);
+    if (stableStringify(localEntry) !== stableStringify(remoteEntry)) {
+      changedIds.push(id);
+    }
+  });
+
+  remoteMap.forEach((_, id) => {
+    if (!localMap.has(id)) {
+      remoteOnlyIds.push(id);
+    }
+  });
+
+  return {
+    localOnlyIds,
+    remoteOnlyIds,
+    changedIds,
+  };
+}
+
+function diffBrands(localBrands, remoteBrands) {
+  const localMap = new Map();
+  const remoteMap = new Map();
+
+  (localBrands || []).forEach((brand) => {
+    const key = normalizeBrandKey(brand);
+    if (key) {
+      localMap.set(key, String(brand));
+    }
+  });
+  (remoteBrands || []).forEach((brand) => {
+    const key = normalizeBrandKey(brand);
+    if (key) {
+      remoteMap.set(key, String(brand));
+    }
+  });
+
+  const localOnlyValues = [];
+  const remoteOnlyValues = [];
+
+  localMap.forEach((value, key) => {
+    if (!remoteMap.has(key)) {
+      localOnlyValues.push(value);
+    }
+  });
+  remoteMap.forEach((value, key) => {
+    if (!localMap.has(key)) {
+      remoteOnlyValues.push(value);
+    }
+  });
+
+  return {
+    localOnlyValues,
+    remoteOnlyValues,
+  };
+}
+
+function diffBrandLogos(localLogos, remoteLogos) {
+  const localKeys = new Set(Object.keys(localLogos || {}));
+  const remoteKeys = new Set(Object.keys(remoteLogos || {}));
+  const localOnlyKeys = [];
+  const remoteOnlyKeys = [];
+  const changedKeys = [];
+
+  localKeys.forEach((key) => {
+    if (!remoteKeys.has(key)) {
+      localOnlyKeys.push(key);
+      return;
+    }
+    if (String(localLogos[key] || "") !== String(remoteLogos[key] || "")) {
+      changedKeys.push(key);
+    }
+  });
+
+  remoteKeys.forEach((key) => {
+    if (!localKeys.has(key)) {
+      remoteOnlyKeys.push(key);
+    }
+  });
+
+  return {
+    localOnlyKeys,
+    remoteOnlyKeys,
+    changedKeys,
+  };
+}
+
+function buildSyncDiff(localSnapshot, remoteSnapshot) {
+  const items = diffListById(localSnapshot.items, remoteSnapshot.items);
+  const favoriteLooks = diffListById(localSnapshot.favoriteLooks, remoteSnapshot.favoriteLooks);
+  const brands = diffBrands(localSnapshot.config.brands, remoteSnapshot.config.brands);
+  const brandLogos = diffBrandLogos(localSnapshot.config.brandLogos, remoteSnapshot.config.brandLogos);
+
+  const hasDiff =
+    items.localOnlyIds.length > 0 ||
+    items.remoteOnlyIds.length > 0 ||
+    items.changedIds.length > 0 ||
+    favoriteLooks.localOnlyIds.length > 0 ||
+    favoriteLooks.remoteOnlyIds.length > 0 ||
+    favoriteLooks.changedIds.length > 0 ||
+    brands.localOnlyValues.length > 0 ||
+    brands.remoteOnlyValues.length > 0 ||
+    brandLogos.localOnlyKeys.length > 0 ||
+    brandLogos.remoteOnlyKeys.length > 0 ||
+    brandLogos.changedKeys.length > 0;
+
+  return {
+    hasDiff,
+    items,
+    favoriteLooks,
+    brands,
+    brandLogos,
+  };
+}
+
+function buildSyncDiffSummary(diff) {
+  return [
+    "检测到本地与云端存在差异：",
+    `- 衣物：本地新增 ${diff.items.localOnlyIds.length}，云端新增 ${diff.items.remoteOnlyIds.length}，内容差异 ${diff.items.changedIds.length}`,
+    `- 收藏穿搭：本地新增 ${diff.favoriteLooks.localOnlyIds.length}，云端新增 ${diff.favoriteLooks.remoteOnlyIds.length}，内容差异 ${diff.favoriteLooks.changedIds.length}`,
+    `- 品牌库：本地新增 ${diff.brands.localOnlyValues.length}，云端新增 ${diff.brands.remoteOnlyValues.length}`,
+    `- 品牌Logo：本地新增 ${diff.brandLogos.localOnlyKeys.length}，云端新增 ${diff.brandLogos.remoteOnlyKeys.length}，内容差异 ${diff.brandLogos.changedKeys.length}`,
+    "",
+    "请选择同步方向：",
+    "- 使用本地并上传：以本地为准，把差异补丁上传到云端",
+    "- 使用云端并下载：以云端为准，覆盖本地数据",
+  ].join("\n");
+}
+
+function buildPatchFromDiff(localSnapshot, diff) {
+  const itemUpsertIds = new Set([...diff.items.localOnlyIds, ...diff.items.changedIds]);
+  const lookUpsertIds = new Set([...diff.favoriteLooks.localOnlyIds, ...diff.favoriteLooks.changedIds]);
+  const logoUpsertKeys = new Set([...diff.brandLogos.localOnlyKeys, ...diff.brandLogos.changedKeys]);
+
+  const itemUpsert = localSnapshot.items.filter((item) => itemUpsertIds.has(String(item.id)));
+  const favoriteLooksUpsert = localSnapshot.favoriteLooks.filter((look) => lookUpsertIds.has(String(look.id)));
+  const brandLogoUpsert = {};
+  logoUpsertKeys.forEach((key) => {
+    brandLogoUpsert[key] = localSnapshot.config.brandLogos[key];
+  });
+
+  return {
+    items: {
+      upsert: itemUpsert,
+      deleteIds: [...diff.items.remoteOnlyIds],
+    },
+    favoriteLooks: {
+      upsert: favoriteLooksUpsert,
+      deleteIds: [...diff.favoriteLooks.remoteOnlyIds],
+    },
+    config: {
+      brands: {
+        upsert: [...diff.brands.localOnlyValues],
+        deleteValues: [...diff.brands.remoteOnlyValues],
+      },
+      brandLogos: {
+        upsert: brandLogoUpsert,
+        deleteKeys: [...diff.brandLogos.remoteOnlyKeys],
+      },
+    },
+  };
+}
+
+function isPatchEmpty(patch) {
+  return (
+    (!patch.items.upsert.length && !patch.items.deleteIds.length) &&
+    (!patch.favoriteLooks.upsert.length && !patch.favoriteLooks.deleteIds.length) &&
+    (!patch.config.brands.upsert.length && !patch.config.brands.deleteValues.length) &&
+    (!Object.keys(patch.config.brandLogos.upsert).length && !patch.config.brandLogos.deleteKeys.length)
+  );
+}
+
+function summarizePatchResult(patch) {
+  return [
+    `衣物：上传 ${patch.items.upsert.length}，删除 ${patch.items.deleteIds.length}`,
+    `收藏穿搭：上传 ${patch.favoriteLooks.upsert.length}，删除 ${patch.favoriteLooks.deleteIds.length}`,
+    `品牌库：新增 ${patch.config.brands.upsert.length}，删除 ${patch.config.brands.deleteValues.length}`,
+    `品牌Logo：更新 ${Object.keys(patch.config.brandLogos.upsert).length}，删除 ${patch.config.brandLogos.deleteKeys.length}`,
+  ].join("\n");
+}
+
+async function postSyncAction(action, data) {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    throw new Error("GitHub Sync 未启用");
+  }
+
+  const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
+  const response = await fetch(workerUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, data }),
+  });
+  if (!response.ok) {
+    throw new Error(`同步失败（${response.status}）`);
+  }
+  return response.json();
+}
+
+async function fetchRemoteIndex() {
+  const remoteIndexData = await postSyncAction("pull-index");
+  return remoteIndexData && typeof remoteIndexData === 'object' ? remoteIndexData : {};
+}
+
+async function fetchRemoteSnapshot() {
+  const snapshotData = await postSyncAction("pull");
+  return normalizeBackupSnapshot(snapshotData);
+}
+
+function applyRemoteSnapshotToLocal(remoteSnapshot) {
+  state.items = remoteSnapshot.items.map((item) => normalizeItem(item));
+  state.favoriteLooks = remoteSnapshot.favoriteLooks.map((look) => normalizeFavoriteLook(look));
+  state.brandCatalog = dedupeBrands([...MAJOR_BRAND_LIST, ...OUTDOOR_BRAND_LIST, ...remoteSnapshot.config.brands]);
+  state.brandLogos = {
+    ...buildPresetBrandLogos(),
+    ...remoteSnapshot.config.brandLogos,
+  };
+
+  saveItems({ skipSync: true });
+  saveFavoriteLooks({ skipSync: true });
+  saveBrandCatalog({ skipSync: true });
+  saveBrandLogos({ skipSync: true });
+
+  renderBrandOptions();
+  renderAddBrandTrigger();
+  renderAddBrandMenu();
+  renderCategories();
+  renderClothes();
+  renderLockOptions();
+  renderRecommendations();
+  renderFavoriteLooks();
 }
 
 /**
- * 上传本地数据到 GitHub
+ * 基于轻量索引差异构建摘要文案
  */
-async function pushToGitHub() {
-  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+function buildIndexDiffSummary(diff) {
+  return [
+    "检测到本地与云端存在差异：",
+    `- 衣物：本地新增 ${diff.items.localOnlyIds.length}，云端新增 ${diff.items.remoteOnlyIds.length}，内容差异 ${diff.items.changedIds.length}`,
+    `- 收藏穿搭：本地新增 ${diff.looks.localOnlyIds.length}，云端新增 ${diff.looks.remoteOnlyIds.length}，内容差异 ${diff.looks.changedIds.length}`,
+    "",
+    "请选择同步方向：",
+    "- 使用本地并上传：以本地为准，把差异补丁上传到云端",
+    "- 使用云端并下载：以云端为准，覆盖本地数据",
+  ].join("\n");
+}
+
+function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source) {
+  pendingSyncDecisionContext = {
+    remoteIndex,
+    localSnapshot,
+    diff,
+    source,
+    isIndexBased: true,
+  };
+  if (refs.syncDiffSummaryText) {
+    refs.syncDiffSummaryText.textContent = buildIndexDiffSummary(diff);
+  }
+  refs.syncDecisionDialog?.showModal();
+}
+
+function openSyncDecisionDialog(remoteSnapshot, localSnapshot, diff, source) {
+  pendingSyncDecisionContext = {
+    remoteSnapshot,
+    localSnapshot,
+    diff,
+    source,
+  };
+  if (refs.syncDiffSummaryText) {
+    refs.syncDiffSummaryText.textContent = buildSyncDiffSummary(diff);
+  }
+  refs.syncDecisionDialog?.showModal();
+}
+
+function closeSyncDecisionDialog() {
+  pendingSyncDecisionContext = null;
+  refs.syncDecisionDialog?.close();
+}
+
+async function chooseLocalSyncDecision() {
+  const context = pendingSyncDecisionContext;
+  closeSyncDecisionDialog();
+  if (!context) {
     return;
   }
-  
+
   try {
-    const payload = buildBackupPayload('full');
-    const workerUrl = GITHUB_SYNC_CONFIG.getWorkerUrl();
-    
-    const response = await fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'push',
-        data: payload
-      })
-    });
-    
-    if (!response.ok) {
-      console.warn('[GitHub Sync] Push failed:', response.status);
+    let patch;
+    if (context.isIndexBased) {
+      const remoteSnapshot = await fetchRemoteSnapshot();
+      patch = buildPatchFromDiff(context.localSnapshot, buildSyncDiff(context.localSnapshot, remoteSnapshot));
+      patch.baselineRevision = lastRemoteRevision;
+    } else {
+      patch = buildPatchFromDiff(context.localSnapshot, context.diff);
+    }
+
+    if (isPatchEmpty(patch)) {
+      if (context.source === "manual") {
+        showAppMessage("本地与云端没有需要上传的差异。", "同步提示");
+      }
       return;
     }
-    
-    console.log('[GitHub Sync] Push succeeded');
+
+    await postSyncAction("push-diff", patch);
+    showAppMessage(`已按本地数据同步到云端。\n${summarizePatchResult(patch)}`, "同步完成");
   } catch (err) {
-    console.error('[GitHub Sync] Push error:', err.message);
+    console.error("[GitHub Sync] Local->Remote sync failed:", err.message);
+    showAppMessage(`同步失败：${err.message}`, "同步失败");
   }
 }
 
-/**
- * 合并远端数据与本地数据
- * 策略：远端数据在本地没有的项目合并，冲突时保留本地更新时间较新的
- */
-function mergeRemoteData(remoteBackup) {
+async function chooseRemoteSyncDecision() {
+  const context = pendingSyncDecisionContext;
+  closeSyncDecisionDialog();
+  if (!context) {
+    return;
+  }
+
   try {
-    if (!remoteBackup.items || !Array.isArray(remoteBackup.items)) {
+    if (context.isIndexBased) {
+      const remoteSnapshot = await fetchRemoteSnapshot();
+      applyRemoteSnapshotToLocal(remoteSnapshot);
+    } else {
+      applyRemoteSnapshotToLocal(context.remoteSnapshot);
+    }
+    showAppMessage("已使用云端数据覆盖本地。", "同步完成");
+  } catch (err) {
+    console.error("[GitHub Sync] Remote->Local apply failed:", err.message);
+    showAppMessage(`应用云端数据失败：${err.message}`, "同步失败");
+  }
+}
+
+async function pushLocalDiffToGitHub() {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    return;
+  }
+
+  try {
+    const localSnapshot = buildLocalSnapshot();
+    const localIndex = buildLightweightIndex(localSnapshot);
+    const remoteIndex = await fetchRemoteIndex();
+    const diff = diffLightweightIndices(localIndex, remoteIndex);
+    
+    if (!diff.hasDiff) {
+      console.log("[GitHub Sync] No diff detected via index, skip upload");
       return;
     }
+
+    const remoteSnapshot = await fetchRemoteSnapshot();
+    const fullDiff = buildSyncDiff(localSnapshot, remoteSnapshot);
+    const patch = buildPatchFromDiff(localSnapshot, fullDiff);
+    patch.baselineRevision = lastRemoteRevision;
     
-    // 合并衣物数据
-    const remoteItemsMap = new Map(remoteBackup.items.map(item => [item.id, item]));
-    state.items.forEach(localItem => {
-      const remoteItem = remoteItemsMap.get(localItem.id);
-      if (remoteItem && remoteItem.updatedAt && localItem.updatedAt) {
-        // 保留更新时间较新的版本
-        if (new Date(remoteItem.updatedAt) > new Date(localItem.updatedAt)) {
-          Object.assign(localItem, remoteItem);
-        }
-      }
-    });
-    
-    // 添加远端独有的项目
-    remoteBackup.items.forEach(remoteItem => {
-      if (!state.items.find(item => item.id === remoteItem.id)) {
-        state.items.push(normalizeItem(remoteItem));
-      }
-    });
-    
-    // 合并收藏的穿搭
-    if (remoteBackup.favoriteLooks && Array.isArray(remoteBackup.favoriteLooks)) {
-      const remoteLooksMap = new Map(remoteBackup.favoriteLooks.map(look => [look.id, look]));
-      state.favoriteLooks.forEach(localLook => {
-        const remoteLook = remoteLooksMap.get(localLook.id);
-        if (remoteLook && remoteLook.updatedAt && localLook.updatedAt) {
-          if (new Date(remoteLook.updatedAt) > new Date(localLook.updatedAt)) {
-            Object.assign(localLook, remoteLook);
-          }
-        }
-      });
-      
-      remoteBackup.favoriteLooks.forEach(remoteLook => {
-        if (!state.favoriteLooks.find(look => look.id === remoteLook.id)) {
-          state.favoriteLooks.push(remoteLook);
-        }
-      });
+    if (isPatchEmpty(patch)) {
+      console.log("[GitHub Sync] Diff exists but patch empty, skip upload");
+      return;
     }
-    
-    // 保存合并结果
-    saveItems();
-    saveFavoriteLooks();
-    
-    console.log('[GitHub Sync] Merge completed');
+
+    await postSyncAction("push-diff", patch);
+    console.log("[GitHub Sync] Diff patch upload succeeded");
   } catch (err) {
-    console.error('[GitHub Sync] Merge error:', err.message);
+    console.error("[GitHub Sync] Diff patch upload failed:", err.message);
+  }
+}
+
+async function runSyncFlow(source = "manual", options = {}) {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
+    if (source === "manual") {
+      showAppMessage("请先配置 GitHub 同步 Worker 地址。", "同步未启用");
+    }
+    return;
+  }
+
+  try {
+    const localSnapshot = buildLocalSnapshot();
+    const localIndex = buildLightweightIndex(localSnapshot);
+    const remoteIndex = await fetchRemoteIndex();
+    const diff = diffLightweightIndices(localIndex, remoteIndex);
+
+    if (!diff.hasDiff) {
+      if (!options.silentWhenNoDiff) {
+        showAppMessage("本地与云端数据一致，无需同步。", "同步提示");
+      }
+      return;
+    }
+
+    lastRemoteRevision = diff.remoteRevision;
+    openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source);
+  } catch (err) {
+    console.error("[GitHub Sync] Sync flow failed:", err.message);
+    if (source === "manual") {
+      showAppMessage(`检查同步差异失败：${err.message}`, "同步失败");
+    }
   }
 }
 
