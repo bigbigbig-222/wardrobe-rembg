@@ -25,10 +25,10 @@ async function initSegmenter() {
     
     // 动态加载 MediaPipe
     if (!window.mediapipe) {
-      // 加载 MediaPipe 脚本
+      // 加载 MediaPipe 脚本（使用 unpkg CDN）
       await new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1632777927/selfie_segmentation.js';
+        script.src = 'https://unpkg.com/@mediapipe/selfie_segmentation@0.1.1632777927/selfie_segmentation.js';
         script.onload = resolve;
         script.onerror = reject;
         document.head.appendChild(script);
@@ -38,7 +38,7 @@ async function initSegmenter() {
     // 创建 Selfie Segmentation 对象
     const selfieSegmentation = new window.SelfieSegmentation({
       locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1632777927/${file}`;
+        return `https://unpkg.com/@mediapipe/selfie_segmentation@0.1.1632777927/${file}`;
       }
     });
     
