@@ -285,6 +285,15 @@ async function pushToGist(data, token, gistId) {
 
 async function pushDiffToGist(diffPatch, token, gistId) {
   const current = await pullFromGist(token, gistId);
+  const currentData = normalizeBackup(current);
+  
+  // 验证修订号（乐观并发控制）
+  const baselineRevision = Number(diffPatch.baselineRevision || 0);
+  if (baselineRevision > 0 && baselineRevision !== currentData.revision) {
+    // 冲突：云端修订号不匹配，说明有其他设备更新过数据
+    throw new Error(`Conflict: baseline revision ${baselineRevision} does not match current revision ${currentData.revision}`);
+  }
+  
   const next = applyDiffPatch(current, diffPatch);
   return pushToGist(next, token, gistId);
 }
@@ -295,10 +304,10 @@ async function pushDiffToGist(diffPatch, token, gistId) {
 async function handleRequest(request, env) {
   const corsHeaders = getCorsHeaders();
   
-  // 处理 CORS preflight
+  // 处理 CORS preflight（必须有 CORS 头）
   if (request.method === 'OPTIONS') {
     return new Response(null, {
-      status: 200,
+      status: 204,
       headers: corsHeaders,
     });
   }
@@ -317,6 +326,7 @@ async function handleRequest(request, env) {
     const gistId = env.GIST_ID;
 
     if (!token || !gistId) {
+      console.error('Missing env vars:', { hasToken: !!token, hasGistId: !!gistId });
       return new Response(JSON.stringify({ error: 'Worker env vars GITHUB_TOKEN or GIST_ID not set' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

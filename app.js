@@ -5164,18 +5164,46 @@ async function pushLocalDiffToGitHub() {
       return;
     }
 
-    const remoteSnapshot = await fetchRemoteSnapshot();
-    const fullDiff = buildSyncDiff(localSnapshot, remoteSnapshot);
-    const patch = buildPatchFromDiff(localSnapshot, fullDiff);
-    patch.baselineRevision = lastRemoteRevision;
-    
-    if (isPatchEmpty(patch)) {
-      console.log("[GitHub Sync] Diff exists but patch empty, skip upload");
+    // 新增/修改的项
+    const changedItemIds = new Set(diff.items.localOnlyIds.concat(diff.items.changedIds));
+    const changedLookIds = new Set(diff.looks.localOnlyIds.concat(diff.looks.changedIds));
+
+    const patch = {
+      items: {
+        upsert: localSnapshot.items.filter(item => changedItemIds.has(String(item.id))),
+        deleteIds: [],
+      },
+      favoriteLooks: {
+        upsert: localSnapshot.favoriteLooks.filter(look => changedLookIds.has(String(look.id))),
+        deleteIds: [],
+      },
+      config: localSnapshot.config,
+      baselineRevision: lastRemoteRevision || remoteIndex.revision,
+    };
+
+    if (patch.items.upsert.length === 0 && patch.favoriteLooks.upsert.length === 0) {
+      console.log("[GitHub Sync] No actual changes to upload");
       return;
     }
 
-    await postSyncAction("push-diff", patch);
-    console.log("[GitHub Sync] Diff patch upload succeeded");
+    try {
+      await postSyncAction("push-diff", patch);
+      console.log("[GitHub Sync] Diff patch upload succeeded");
+      lastRemoteRevision = (remoteIndex.revision || 0) + 1;
+    } catch (err) {
+      // 如果是冲突错误，尝试完整同步
+      if (err.message && err.message.includes("Conflict")) {
+        console.log("[GitHub Sync] Conflict detected, retrying with full sync");
+        const remoteSnapshot = await fetchRemoteSnapshot();
+        const fullDiff = buildSyncDiff(localSnapshot, remoteSnapshot);
+        const fullPatch = buildPatchFromDiff(localSnapshot, fullDiff);
+        fullPatch.baselineRevision = (remoteIndex.revision || 0);
+        await postSyncAction("push-diff", fullPatch);
+        console.log("[GitHub Sync] Full sync after conflict succeeded");
+      } else {
+        throw err;
+      }
+    }
   } catch (err) {
     console.error("[GitHub Sync] Diff patch upload failed:", err.message);
   }
