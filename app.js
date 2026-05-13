@@ -499,8 +499,9 @@ function buildPresetBrandLogos() {
   const result = {};
   for (const brand of PRESET_LOGO_BRANDS) {
     const key = normalizeBrandKey(brand);
-    // Prefer embedded SVG logos, fallback to SVG with initials
-    result[key] = PRESET_BRAND_LOGOS_CDN[key] || buildOfflineBrandLogo(brand);
+    // In CN network environments, remote logo CDNs are often unstable.
+    // Use deterministic offline SVG logos by default for reliable rendering.
+    result[key] = buildOfflineBrandLogo(brand);
   }
   return result;
 }
@@ -638,7 +639,7 @@ function renderBrandLibrary() {
         <input class="brand-library-check" type="checkbox" data-brand-check="${brand}" aria-label="选择品牌 ${brand}" ${
           state.brandLibraryMultiSelectMode ? "" : "hidden"
         } />
-        <img class="brand-inline-logo" src="${getBrandLogo(brand)}" alt="" data-brand-logo />
+        <img class="brand-inline-logo" src="${getBrandLogo(brand)}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(brand)}" />
         <span>${brand}</span>
       </div>
       <button class="btn btn--ghost brand-delete-btn" type="button" data-action="delete-brand">删除</button>
@@ -1096,7 +1097,7 @@ function renderBrandOptions() {
     button.type = "button";
     button.className = "brand-filter-option";
     button.dataset.value = brand;
-    button.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo />${brand}`;
+    button.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(brand)}" />${brand}`;
     const image = button.querySelector("img");
     if (image) {
       image.addEventListener("error", onBrandLogoError);
@@ -1118,7 +1119,7 @@ function renderFilterBrandTrigger() {
   }
 
   const logo = getBrandLogo(value);
-  refs.filterBrandTrigger.innerHTML = `<img src="${logo}" alt="" data-brand-logo />${label}`;
+  refs.filterBrandTrigger.innerHTML = `<img src="${logo}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(value)}" />${label}`;
   const image = refs.filterBrandTrigger.querySelector("img");
   if (image) {
     image.addEventListener("error", onBrandLogoError);
@@ -1137,7 +1138,7 @@ function renderAddBrandTrigger() {
     refs.addBrandTrigger.textContent = "请选择品牌";
     return;
   }
-  refs.addBrandTrigger.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo />${brand}`;
+  refs.addBrandTrigger.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(brand)}" />${brand}`;
   const image = refs.addBrandTrigger.querySelector("img");
   if (image) {
     image.addEventListener("error", onBrandLogoError);
@@ -1164,7 +1165,7 @@ function renderAddBrandMenu() {
     button.type = "button";
     button.className = "brand-filter-option";
     button.dataset.value = brand;
-    button.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo />${brand}`;
+    button.innerHTML = `<img src="${getBrandLogo(brand)}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(brand)}" />${brand}`;
     const image = button.querySelector("img");
     if (image) {
       image.addEventListener("error", onBrandLogoError);
@@ -1192,7 +1193,19 @@ function onBrandLogoError(event) {
   if (!(target instanceof HTMLImageElement)) {
     return;
   }
-  target.src = BLANK_BRAND_LOGO;
+  const rawKey = target.dataset.brandKey || target.closest("[data-brand]")?.getAttribute("data-brand") || "";
+  const brandKey = normalizeBrandKey(rawKey);
+  const fallbackLogo = brandKey ? buildOfflineBrandLogo(brandKey) : BLANK_BRAND_LOGO;
+
+  // Prevent repeat error loops.
+  target.removeEventListener("error", onBrandLogoError);
+  target.src = fallbackLogo;
+
+  // Persist fallback so subsequent renders no longer try unreachable URLs.
+  if (brandKey) {
+    state.brandLogos[brandKey] = fallbackLogo;
+    saveBrandLogos({ skipSync: true });
+  }
 }
 
 function renderCategories() {
@@ -1318,6 +1331,7 @@ function renderClothes() {
       brandLogoImage.className = "brand-inline-logo";
       brandLogoImage.src = getBrandLogo(item.brand);
       brandLogoImage.alt = "";
+      brandLogoImage.dataset.brandKey = normalizeBrandKey(item.brand);
       meta.append(brandLogoImage);
       meta.append(document.createTextNode(`${item.brand} · 尺码 ${item.size} · ${item.color} · ${item.season}`));
       if (brandLogoImage) {
