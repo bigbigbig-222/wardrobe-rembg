@@ -731,6 +731,23 @@ button:focus-visible {
   font-size: 0.78rem;
 }
 
+.brand-action-buttons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.btn--compact {
+  min-height: 26px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+}
+
+.brand-edit-btn {
+  font-size: 0.9rem;
+}
+
 .brand-filter-option img,
 .brand-filter-trigger img {
   width: 0.95rem;

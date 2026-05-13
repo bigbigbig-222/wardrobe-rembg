@@ -240,6 +240,15 @@ const refs = {
   brandLogoPreview: document.getElementById("brandLogoPreview"),
   brandLogoPreviewWrap: document.getElementById("brandLogoPreviewWrap"),
   clearBrandLogoBtn: document.getElementById("clearBrandLogoBtn"),
+  editBrandDialog: document.getElementById("editBrandDialog"),
+  editBrandForm: document.getElementById("editBrandForm"),
+  closeEditBrandDialog: document.getElementById("closeEditBrandDialog"),
+  cancelEditBrand: document.getElementById("cancelEditBrand"),
+  editBrandNameInput: document.getElementById("editBrandNameInput"),
+  editBrandLogoInput: document.getElementById("editBrandLogoInput"),
+  editBrandLogoPreview: document.getElementById("editBrandLogoPreview"),
+  editBrandLogoPreviewWrap: document.getElementById("editBrandLogoPreviewWrap"),
+  clearEditBrandLogoBtn: document.getElementById("clearEditBrandLogoBtn"),
   brandLibraryDialog: document.getElementById("brandLibraryDialog"),
   closeBrandLibraryDialog: document.getElementById("closeBrandLibraryDialog"),
   brandLibrarySearchInput: document.getElementById("brandLibrarySearchInput"),
@@ -641,11 +650,18 @@ function renderBrandLibrary() {
         <img class="brand-inline-logo" src="${getBrandLogo(brand)}" alt="" data-brand-logo data-brand-key="${normalizeBrandKey(brand)}" />
         <span>${brand}</span>
       </div>
-      <button class="btn btn--ghost brand-delete-btn" type="button" data-action="delete-brand">删除</button>
+      <div class="brand-action-buttons">
+        <button class="btn btn--ghost btn--compact brand-edit-btn" type="button" data-action="edit-brand" aria-label="编辑品牌">✏️</button>
+        <button class="btn btn--ghost btn--compact brand-delete-btn" type="button" data-action="delete-brand" aria-label="删除品牌">🗑️</button>
+      </div>
     `;
     const image = row.querySelector("img");
     if (image) {
       image.addEventListener("error", onBrandLogoError);
+    }
+    const editBtn = row.querySelector('[data-action="edit-brand"]');
+    if (editBtn) {
+      editBtn.addEventListener("click", () => openEditBrandDialog(brand));
     }
     refs.brandLibraryList.append(row);
   }
@@ -703,6 +719,105 @@ function deleteBrand(brandName) {
     renderBrandOptions();
     renderBrandLibrary();
   }, "删除品牌");
+}
+
+function openEditBrandDialog(brandName) {
+  const brand = normalizeBrandName(brandName);
+  if (!brand) {
+    return;
+  }
+
+  refs.editBrandNameInput.value = brand;
+  refs.editBrandLogoInput.value = "";
+  refs.editBrandLogoPreviewWrap.style.display = "none";
+  refs.editBrandLogoPreview.src = "";
+  refs.editBrandDialog.dataset.editingBrand = brand;
+  refs.editBrandDialog.showModal();
+}
+
+function clearEditBrandLogo() {
+  refs.editBrandLogoInput.value = "";
+  refs.editBrandLogoPreviewWrap.style.display = "none";
+  refs.editBrandLogoPreview.src = "";
+}
+
+async function onEditBrandLogoChange(event) {
+  const [file] = event.target.files ?? [];
+  if (!file) {
+    clearEditBrandLogo();
+    return;
+  }
+
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    refs.editBrandLogoPreview.src = dataUrl;
+    refs.editBrandLogoPreviewWrap.style.display = "block";
+  } catch {
+    clearEditBrandLogo();
+  }
+}
+
+function closeEditBrandDialog() {
+  if (refs.editBrandDialog.open) {
+    refs.editBrandDialog.close();
+  }
+  refs.editBrandDialog.dataset.editingBrand = "";
+}
+
+async function onEditBrandSubmit(event) {
+  event.preventDefault();
+  const oldBrand = String(refs.editBrandDialog.dataset.editingBrand || "").trim();
+  const newBrandName = normalizeBrandName(refs.editBrandNameInput.value);
+  const [file] = refs.editBrandLogoInput.files ?? [];
+
+  if (!oldBrand || !newBrandName) {
+    return;
+  }
+
+  if (isBlockedBrand(newBrandName)) {
+    return;
+  }
+
+  // 处理品牌名称变更
+  if (oldBrand.toLowerCase() !== newBrandName.toLowerCase()) {
+    // 检查新品牌名是否已存在
+    if (state.brandCatalog.some((entry) => entry.toLowerCase() === newBrandName.toLowerCase())) {
+      showAppMessage("该品牌已存在，请使用其他名称。", "品牌重复");
+      return;
+    }
+
+    // 替换品牌名称
+    state.brandCatalog = state.brandCatalog.map((entry) =>
+      entry.toLowerCase() === oldBrand.toLowerCase() ? newBrandName : entry
+    );
+
+    // 移动品牌Logo
+    const oldKey = normalizeBrandKey(oldBrand);
+    const newKey = normalizeBrandKey(newBrandName);
+    if (state.brandLogos[oldKey]) {
+      state.brandLogos[newKey] = state.brandLogos[oldKey];
+      delete state.brandLogos[oldKey];
+    }
+
+    saveBrandCatalog();
+    saveBrandLogos();
+  }
+
+  // 处理Logo变更
+  if (file) {
+    try {
+      const logoData = await readFileAsDataUrl(file);
+      setBrandLogo(newBrandName, logoData);
+    } catch {
+      showAppMessage("品牌Logo上传失败，请重试。", "上传失败");
+      return;
+    }
+  }
+
+  renderBrandOptions();
+  renderBrandLibrary();
+  closeEditBrandDialog();
+  showAppMessage("品牌信息已更新。", "更新成功");
 }
 
 function getSelectedBrandsInLibrary() {
@@ -4230,6 +4345,11 @@ function bindEvents() {
   refs.cancelCreateBrand.addEventListener("click", closeCreateBrandDialog);
   refs.newBrandLogoInput.addEventListener("change", onBrandLogoChange);
   refs.clearBrandLogoBtn.addEventListener("click", clearBrandLogo);
+  refs.editBrandForm.addEventListener("submit", onEditBrandSubmit);
+  refs.closeEditBrandDialog.addEventListener("click", closeEditBrandDialog);
+  refs.cancelEditBrand.addEventListener("click", closeEditBrandDialog);
+  refs.editBrandLogoInput.addEventListener("change", onEditBrandLogoChange);
+  refs.clearEditBrandLogoBtn.addEventListener("click", clearEditBrandLogo);
   refs.closeBrandLibraryDialog.addEventListener("click", closeBrandLibraryDialog);
   if (refs.toggleBrandMultiSelectBtn) {
     refs.toggleBrandMultiSelectBtn.onclick = () => {

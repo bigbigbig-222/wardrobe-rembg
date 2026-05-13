@@ -417,6 +417,33 @@
       </form>
     </dialog>
 
+    <dialog id="editBrandDialog" class="add-dialog">
+      <form method="dialog" class="dialog-card dialog-card--mini" id="editBrandForm" autocomplete="off">
+        <header class="dialog-card__header">
+          <h3>编辑品牌</h3>
+          <button class="close-btn" id="closeEditBrandDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body">
+          <label>
+            品牌名称
+            <input id="editBrandNameInput" type="text" maxlength="30" placeholder="例如：Arc'teryx" required />
+          </label>
+          <label class="image-picker" for="editBrandLogoInput">更新品牌Logo</label>
+          <input id="editBrandLogoInput" type="file" accept="image/*" hidden />
+          <div id="editBrandLogoPreviewWrap" style="margin-top: 1rem; text-align: center; display: none;">
+            <img id="editBrandLogoPreview" style="max-width: 120px; max-height: 120px; border-radius: 8px; object-fit: contain;" alt="品牌Logo预览" />
+            <div style="margin-top: 0.5rem;">
+              <button type="button" id="clearEditBrandLogoBtn" class="btn btn--ghost" style="font-size: 0.8rem;">清除图片</button>
+            </div>
+          </div>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelEditBrand" type="button">取消</button>
+          <button class="btn btn--primary" id="confirmEditBrand" type="submit">保存更改</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="manualLookDialog" class="add-dialog">
       <form method="dialog" class="dialog-card dialog-card--mini" id="manualLookForm" autocomplete="off">
         <header class="dialog-card__header">
