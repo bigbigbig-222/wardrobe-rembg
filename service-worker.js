@@ -1,6 +1,6 @@
-// Service Worker for caching brand logos and resources for offline access
-const CACHE_NAME = 'wardrobe-cache-v7';
-const LOGO_CACHE = 'wardrobe-logos-v7';
+// Service Worker for caching app resources and proxied real brand logos.
+const CACHE_NAME = 'wardrobe-cache-v8';
+const LOGO_CACHE = 'wardrobe-logos-v8';
 
 const URLS_TO_CACHE = [
   '/',
@@ -15,45 +15,6 @@ const URLS_TO_CACHE = [
   '/brand_logos_cdn.js',
   '/cropper.min.js',
   '/cropper.min.css',
-];
-
-// Local static brand logo files to pre-cache
-const BRAND_LOGOS_TO_CACHE = [
-  '/assets/brand-logos/uniqlo.svg',
-  '/assets/brand-logos/muji.svg',
-  '/assets/brand-logos/zara.svg',
-  '/assets/brand-logos/h-m.svg',
-  '/assets/brand-logos/gap.svg',
-  '/assets/brand-logos/levi-s.svg',
-  '/assets/brand-logos/nike.svg',
-  '/assets/brand-logos/adidas.svg',
-  '/assets/brand-logos/puma.svg',
-  '/assets/brand-logos/new-balance.svg',
-  '/assets/brand-logos/converse.svg',
-  '/assets/brand-logos/vans.svg',
-  '/assets/brand-logos/skechers.svg',
-  '/assets/brand-logos/anta.svg',
-  '/assets/brand-logos/li-ning.svg',
-  '/assets/brand-logos/fila.svg',
-  '/assets/brand-logos/the-north-face.svg',
-  '/assets/brand-logos/columbia.svg',
-  '/assets/brand-logos/lululemon.svg',
-  '/assets/brand-logos/massimo-dutti.svg',
-  '/assets/brand-logos/mont-bell.svg',
-  '/assets/brand-logos/arc-teryx.svg',
-  '/assets/brand-logos/keen.svg',
-  '/assets/brand-logos/nanamica.svg',
-  '/assets/brand-logos/patagonia.svg',
-  '/assets/brand-logos/mammut.svg',
-  '/assets/brand-logos/salomon.svg',
-  '/assets/brand-logos/merrell.svg',
-  '/assets/brand-logos/hoka.svg',
-  '/assets/brand-logos/on.svg',
-  '/assets/brand-logos/black-diamond.svg',
-  '/assets/brand-logos/snow-peak.svg',
-  '/assets/brand-logos/deuter.svg',
-  '/assets/brand-logos/osprey.svg',
-  '/assets/brand-logos/jack-wolfskin.svg',
 ];
 
 // Install event - cache resources
@@ -74,17 +35,6 @@ self.addEventListener('install', (event) => {
             })
         )
       );
-    }).then(() => {
-      // Pre-cache local logos (do not fail install if some files are missing)
-      return caches.open(LOGO_CACHE).then((cache) => {
-        return Promise.allSettled(
-          BRAND_LOGOS_TO_CACHE.map(url =>
-            fetch(url)
-              .then(response => cache.put(url, response))
-              .catch(() => {/* Silent fail, logo will be fetched on demand */})
-          )
-        );
-      });
     })
   );
 });
@@ -99,26 +49,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strategy: Cache first for local logos, Network first for app files
-  if (url.pathname.startsWith('/assets/brand-logos/')) {
-    // Logo caching: Cache first, fallback to network
+  // Strategy: Cache first for proxied logo API, Network first for app files
+  if (url.pathname.startsWith('/api/logo')) {
     event.respondWith(
-      caches.match(request)
-        .then(response => response || fetch(request))
-        .then(response => {
-          // Cache successful responses for future offline use
-          if (response && response.status === 200 && response.type !== 'error') {
-            const responseToCache = response.clone();
-            caches.open(LOGO_CACHE).then(cache => {
-              cache.put(request, responseToCache);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Return a placeholder if logo fetch fails
-          return caches.match(request);
-        })
+      caches.open(LOGO_CACHE).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) {
+          return cached;
+        }
+
+        const response = await fetch(request);
+        if (response && response.ok) {
+          cache.put(request, response.clone());
+        }
+        return response;
+      }).catch(() => caches.match(request))
     );
   } else {
     // App resources: Network first, fallback to cache
