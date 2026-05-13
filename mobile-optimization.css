@@ -1,5 +1,21 @@
 /* iPhone 14 Pro 和小屏幕优化（<= 480px） */
 @media (max-width: 480px) {
+  .hero-nav {
+    grid-template-columns: minmax(0, 0.66fr) minmax(0, 1.34fr) !important;
+    gap: 4px !important;
+  }
+
+  .view-tabs {
+    padding: 2px !important;
+    gap: 3px !important;
+  }
+
+  .tab-btn {
+    min-height: 30px !important;
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+
   /* 1) 顶部四个操作按钮保持同一行 */
   .hero-actions {
     display: flex !important;
@@ -18,10 +34,10 @@
   .hero-actions .btn--menu,
   .hero-actions .io-menu > summary {
     width: 100% !important;
-    min-height: 34px !important;
+    min-height: 32px !important;
     min-width: 0 !important;
-    padding: 0 4px !important;
-    font-size: 10.5px !important;
+    padding: 0 3px !important;
+    font-size: 10px !important;
     white-space: nowrap !important;
     line-height: 1 !important;
     letter-spacing: -0.1px;
@@ -62,26 +78,19 @@
     overflow: hidden;
   }
 
-  #filterForm {
-    display: flex !important;
-    align-items: center !important;
-    gap: 4px !important;
-    flex-wrap: nowrap !important;
-  }
-
   .filters-row {
-    display: flex !important;
-    flex-wrap: nowrap !important;
+    display: grid !important;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
     gap: 4px !important;
     overflow: hidden !important;
     padding-bottom: 0 !important;
-    flex: 1 1 0 !important;
     min-width: 0 !important;
+    align-items: center !important;
   }
 
   .filters-row > select,
   .filters-row > .brand-filter-wrap {
-    flex: 1 1 0 !important;
+    width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
   }
@@ -89,17 +98,17 @@
   #filterPanel input,
   #filterPanel select,
   #filterPanel .brand-filter-trigger {
-    font-size: 10.5px !important;
+    font-size: 10px !important;
     min-height: 30px !important;
-    padding: 3px 5px !important;
+    padding: 2px 4px !important;
     line-height: 1.2 !important;
   }
 
   #filterForm #searchInput {
-    flex: 0 0 86px !important;
-    width: 86px !important;
-    min-width: 86px !important;
-    font-size: 10.5px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin-top: 4px !important;
+    font-size: 10px !important;
     min-height: 30px !important;
     padding: 3px 6px !important;
   }
