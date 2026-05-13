@@ -58,7 +58,7 @@ const GITHUB_SYNC_CONFIG = {
   }
 };
 
-// AI 背景去除配置 (Render 部署)
+// AI 背景去除配置（支持 remove.bg 或 Render rembg）
 const REMBG_CONFIG = {
   getApiUrl: function() {
     return localStorage.getItem('rembgApiUrl') || '';
