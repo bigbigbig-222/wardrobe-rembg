@@ -22,7 +22,18 @@
     flex-direction: row !important;
     flex-wrap: nowrap !important;
     gap: 4px !important;
-    overflow: hidden !important;
+    overflow: visible !important;
+    position: relative !important;
+    z-index: 12001 !important;
+  }
+
+  .hero-actions > .io-menu {
+    position: relative !important;
+    z-index: 12002 !important;
+  }
+
+  .hero-actions .io-menu__list {
+    z-index: 12003 !important;
   }
 
   .hero-actions > * {
