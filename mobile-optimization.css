@@ -1,125 +1,140 @@
 /* iPhone 14 Pro 和小屏幕优化（<= 480px） */
 @media (max-width: 480px) {
-  /* 按钮优化 */
-  .btn {
-    padding: 10px 14px !important;
-    font-size: 14px !important;
-    min-width: 60px !important;
-    min-height: 44px !important;
-    border-radius: 8px !important;
-  }
-
-  /* 按钮行改为竖直 */
+  /* 1) 顶部四个操作按钮保持同一行 */
   .hero-actions {
     display: flex !important;
-    flex-direction: column !important;
-    gap: 8px !important;
-  }
-
-  .hero-actions .btn {
-    width: 100% !important;
-    padding: 10px 12px !important;
-  }
-
-  /* 分类网格 - 改为 3 列避免 2 行 */
-  .category-grid {
-    grid-template-columns: repeat(3, 1fr) !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
     gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .hero-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hero-actions > * {
+    flex: 0 0 auto !important;
+  }
+
+  .hero-actions .btn,
+  .hero-actions .btn--menu,
+  .hero-actions .io-menu > summary {
+    min-height: 36px !important;
+    min-width: 72px !important;
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    line-height: 1 !important;
+  }
+
+  /* 2) 服装分类改为单行 */
+  .category-grid {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .category-grid::-webkit-scrollbar {
+    display: none;
   }
 
   .category-card {
-    padding: 8px !important;
+    flex: 0 0 104px !important;
+    width: 104px !important;
+    height: 72px !important;
   }
 
   .category-card__btn {
-    padding: 6px 8px !important;
+    padding: 4px 6px !important;
     font-size: 12px !important;
-    min-width: unset !important;
+    min-width: 0 !important;
   }
 
-  /* 筛选框优化 */
+  .category-card__name {
+    font-size: 12px !important;
+  }
+
+  .category-card__count {
+    font-size: 11px !important;
+  }
+
+  /* 3) 筛选框字体变小，且同一行显示 */
   #filterPanel {
-    padding: 12px !important;
-  }
-
-  #searchInput {
-    width: 100% !important;
-    padding: 8px 12px !important;
-    font-size: 14px !important;
-    min-height: 40px !important;
-  }
-
-  /* 选项按钮改为 wrap */
-  .tab-btn-group {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 6px !important;
-  }
-
-  .tab-btn {
-    padding: 8px 12px !important;
-    font-size: 12px !important;
-    min-width: unset !important;
-    flex: 0 1 auto !important;
-  }
-
-  /* 品牌按钮行 */
-  .brand-library-btn-row {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 6px !important;
-  }
-
-  .brand-library-btn-row .btn {
-    padding: 8px 10px !important;
-    font-size: 12px !important;
-    min-width: unset !important;
-  }
-
-  /* 菜单按钮 */
-  .btn--menu {
-    padding: 8px 10px !important;
-    min-height: 40px !important;
-  }
-
-  /* 对话框按钮 */
-  .dialog-card__footer {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 8px !important;
-  }
-
-  .dialog-card__footer .btn {
-    width: 100% !important;
     padding: 10px !important;
-    font-size: 14px !important;
+    overflow: hidden;
   }
 
-  /* 输入框最小尺寸 */
-  input[type="text"],
-  input[type="number"],
-  select,
-  textarea {
-    font-size: 16px !important;
-    min-height: 40px !important;
-    padding: 8px 10px !important;
+  .filters-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px !important;
   }
 
-  /* iOS 推荐的点击区域 44x44px */
-  button,
-  .icon-btn,
-  [role="button"] {
-    min-width: 44px !important;
-    min-height: 44px !important;
+  .filters-row > select,
+  .filters-row > .brand-filter-wrap {
+    flex: 0 0 auto !important;
+    min-width: 90px !important;
+    max-width: 110px !important;
   }
 
-  /* 衣物卡片 */
-  .clothing-card__image {
-    height: 180px !important;
+  #filterPanel input,
+  #filterPanel select,
+  #filterPanel .brand-filter-trigger {
+    font-size: 12px !important;
+    min-height: 32px !important;
+    padding: 4px 8px !important;
+    line-height: 1.2 !important;
   }
 
-  /* 总体字体调整 */
-  body {
-    font-size: 14px !important;
+  #filterForm #searchInput {
+    width: 100% !important;
+    font-size: 12px !important;
+    min-height: 32px !important;
+    padding: 4px 8px !important;
+  }
+
+  /* 6) 清空当前筛选 / 重置 按钮高度缩小 */
+  #clearCurrentFilters,
+  #resetFilters {
+    min-height: 26px !important;
+    height: 26px !important;
+    padding: 0 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    border-radius: 7px !important;
+  }
+
+  /* 4) 右下角 FAB：加号居中，提升图层避免被遮挡 */
+  .fab {
+    display: grid !important;
+    place-items: center !important;
+    z-index: 9999 !important;
+    right: 14px !important;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+    width: 58px !important;
+    height: 58px !important;
+    font-size: 30px !important;
+    line-height: 1 !important;
+    padding: 0 !important;
+  }
+
+  /* 5) 弹窗右上角关闭按钮符号居中 */
+  .close-btn {
+    display: grid !important;
+    place-items: center !important;
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+    font-size: 22px !important;
   }
 }
