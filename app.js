@@ -5164,24 +5164,28 @@ async function pushLocalDiffToGitHub() {
       return;
     }
 
-    // 新增/修改的项
+    // 计算新增/修改/删除的项
     const changedItemIds = new Set(diff.items.localOnlyIds.concat(diff.items.changedIds));
+    const deletedItemIds = diff.items.remoteOnlyIds; // 云端有但本地没有 = 被删除
+    
     const changedLookIds = new Set(diff.looks.localOnlyIds.concat(diff.looks.changedIds));
+    const deletedLookIds = diff.looks.remoteOnlyIds;
 
     const patch = {
       items: {
         upsert: localSnapshot.items.filter(item => changedItemIds.has(String(item.id))),
-        deleteIds: [],
+        deleteIds: deletedItemIds,
       },
       favoriteLooks: {
         upsert: localSnapshot.favoriteLooks.filter(look => changedLookIds.has(String(look.id))),
-        deleteIds: [],
+        deleteIds: deletedLookIds,
       },
       config: localSnapshot.config,
       baselineRevision: lastRemoteRevision || remoteIndex.revision,
     };
 
-    if (patch.items.upsert.length === 0 && patch.favoriteLooks.upsert.length === 0) {
+    if (patch.items.upsert.length === 0 && patch.favoriteLooks.upsert.length === 0 && 
+        patch.items.deleteIds.length === 0 && patch.favoriteLooks.deleteIds.length === 0) {
       console.log("[GitHub Sync] No actual changes to upload");
       return;
     }
