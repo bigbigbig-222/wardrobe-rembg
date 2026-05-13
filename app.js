@@ -4973,14 +4973,20 @@ function applyRemoteSnapshotToLocal(remoteSnapshot) {
 /**
  * 基于轻量索引差异构建摘要文案
  */
-function buildIndexDiffSummary(diff, localSnapshot) {
-  const snapshot = localSnapshot || {};
-  const items = snapshot.items || [];
-  const looks = snapshot.favoriteLooks || [];
+function buildIndexDiffSummary(diff, localSnapshot, remoteSnapshot) {
+  const localData = localSnapshot || {};
+  const remoteData = remoteSnapshot || {};
+  
+  const localItems = localData.items || [];
+  const localLooks = localData.favoriteLooks || [];
+  const remoteItems = remoteData.items || [];
+  const remoteLooks = remoteData.favoriteLooks || [];
   
   // 建立 ID 到名称的映射
-  const itemMap = new Map(items.map(item => [String(item.id), item.name || '未命名衣物']));
-  const lookMap = new Map(looks.map(look => [String(look.id), look.title || '未命名搭配']));
+  const localItemMap = new Map(localItems.map(item => [String(item.id), item.name || '未命名衣物']));
+  const localLookMap = new Map(localLooks.map(look => [String(look.id), look.title || '未命名搭配']));
+  const remoteItemMap = new Map(remoteItems.map(item => [String(item.id), item.name || '未命名衣物']));
+  const remoteLookMap = new Map(remoteLooks.map(look => [String(look.id), look.title || '未命名搭配']));
   
   // 构建详细的差异信息
   const lines = ["📊 检测到本地与云端存在差异：", ""];
@@ -4989,28 +4995,26 @@ function buildIndexDiffSummary(diff, localSnapshot) {
   const itemDiffLines = [];
   if (diff.items.localOnlyIds.length > 0) {
     itemDiffLines.push(`  ✨ 本地新增 ${diff.items.localOnlyIds.length} 项衣物：`);
-    diff.items.localOnlyIds.slice(0, 5).forEach(id => {
-      const name = itemMap.get(String(id)) || '未知';
+    diff.items.localOnlyIds.forEach(id => {
+      const name = localItemMap.get(String(id)) || '未知';
       itemDiffLines.push(`     • ${name}`);
     });
-    if (diff.items.localOnlyIds.length > 5) {
-      itemDiffLines.push(`     ... 及其他 ${diff.items.localOnlyIds.length - 5} 项`);
-    }
   }
   
   if (diff.items.remoteOnlyIds.length > 0) {
-    itemDiffLines.push(`  ☁️  云端新增 ${diff.items.remoteOnlyIds.length} 项衣物`);
+    itemDiffLines.push(`  ☁️  云端新增 ${diff.items.remoteOnlyIds.length} 项衣物：`);
+    diff.items.remoteOnlyIds.forEach(id => {
+      const name = remoteItemMap.get(String(id)) || '未知';
+      itemDiffLines.push(`     • ${name}`);
+    });
   }
   
   if (diff.items.changedIds.length > 0) {
     itemDiffLines.push(`  🔄 ${diff.items.changedIds.length} 项衣物内容已修改：`);
-    diff.items.changedIds.slice(0, 5).forEach(id => {
-      const name = itemMap.get(String(id)) || '未知';
-      itemDiffLines.push(`     • ${name}`);
+    diff.items.changedIds.forEach(id => {
+      const localName = localItemMap.get(String(id)) || '未知';
+      itemDiffLines.push(`     • ${localName}`);
     });
-    if (diff.items.changedIds.length > 5) {
-      itemDiffLines.push(`     ... 及其他 ${diff.items.changedIds.length - 5} 项`);
-    }
   }
   
   if (itemDiffLines.length > 0) {
@@ -5023,21 +5027,26 @@ function buildIndexDiffSummary(diff, localSnapshot) {
   const lookDiffLines = [];
   if (diff.looks.localOnlyIds.length > 0) {
     lookDiffLines.push(`  ✨ 本地新增 ${diff.looks.localOnlyIds.length} 个搭配：`);
-    diff.looks.localOnlyIds.slice(0, 3).forEach(id => {
-      const name = lookMap.get(String(id)) || '未知';
+    diff.looks.localOnlyIds.forEach(id => {
+      const name = localLookMap.get(String(id)) || '未知';
       lookDiffLines.push(`     • ${name}`);
     });
-    if (diff.looks.localOnlyIds.length > 3) {
-      lookDiffLines.push(`     ... 及其他 ${diff.looks.localOnlyIds.length - 3} 个`);
-    }
   }
   
   if (diff.looks.remoteOnlyIds.length > 0) {
-    lookDiffLines.push(`  ☁️  云端新增 ${diff.looks.remoteOnlyIds.length} 个搭配`);
+    lookDiffLines.push(`  ☁️  云端新增 ${diff.looks.remoteOnlyIds.length} 个搭配：`);
+    diff.looks.remoteOnlyIds.forEach(id => {
+      const name = remoteLookMap.get(String(id)) || '未知';
+      lookDiffLines.push(`     • ${name}`);
+    });
   }
   
   if (diff.looks.changedIds.length > 0) {
-    lookDiffLines.push(`  🔄 ${diff.looks.changedIds.length} 个搭配已修改`);
+    lookDiffLines.push(`  🔄 ${diff.looks.changedIds.length} 个搭配已修改：`);
+    diff.looks.changedIds.forEach(id => {
+      const name = localLookMap.get(String(id)) || '未知';
+      lookDiffLines.push(`     • ${name}`);
+    });
   }
   
   if (lookDiffLines.length > 0) {
@@ -5054,7 +5063,7 @@ function buildIndexDiffSummary(diff, localSnapshot) {
   return lines.join("\n");
 }
 
-function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source) {
+function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source, remoteSnapshot) {
   pendingSyncDecisionContext = {
     remoteIndex,
     localSnapshot,
@@ -5063,7 +5072,7 @@ function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, sourc
     isIndexBased: true,
   };
   if (refs.syncDiffSummaryText) {
-    refs.syncDiffSummaryText.textContent = buildIndexDiffSummary(diff, localSnapshot);
+    refs.syncDiffSummaryText.textContent = buildIndexDiffSummary(diff, localSnapshot, remoteSnapshot);
   }
   refs.syncDecisionDialog?.showModal();
 }
@@ -5194,7 +5203,9 @@ async function runSyncFlow(source = "manual", options = {}) {
     }
 
     lastRemoteRevision = diff.remoteRevision;
-    openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source);
+    // 获取完整的远程数据以显示详细的差异信息
+    const remoteSnapshot = await fetchRemoteSnapshot();
+    openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source, remoteSnapshot);
   } catch (err) {
     console.error("[GitHub Sync] Sync flow failed:", err.message);
     if (source === "manual") {
