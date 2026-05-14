@@ -729,8 +729,12 @@ function openEditBrandDialog(brandName) {
 
   refs.editBrandNameInput.value = brand;
   refs.editBrandLogoInput.value = "";
-  refs.editBrandLogoPreviewWrap.style.display = "none";
-  refs.editBrandLogoPreview.src = "";
+  
+  // 显示当前品牌的Logo
+  const currentLogo = getBrandLogo(brand);
+  refs.editBrandLogoPreview.src = currentLogo;
+  refs.editBrandLogoPreviewWrap.style.display = "block";
+  
   refs.editBrandDialog.dataset.editingBrand = brand;
   refs.editBrandDialog.showModal();
 }
