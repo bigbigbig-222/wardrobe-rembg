@@ -103,8 +103,6 @@ const STORAGE_KEY = "virtual-wardrobe-items-v3";
 const FAVORITE_LOOKS_KEY = "virtual-wardrobe-favorite-looks-v1";
 const BRAND_CATALOG_KEY = "virtual-wardrobe-brand-catalog-v1";
 const BRAND_LOGOS_KEY = "virtual-wardrobe-brand-logos-v1";
-const SYNC_AUTH_TOKEN_KEY = "wardrobe-sync-auth-token-v1";
-const SYNC_AUTH_USER_KEY = "wardrobe-sync-auth-user-v1";
 const BLANK_BRAND_LOGO =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
@@ -115,20 +113,6 @@ const PLACEHOLDER_IMAGE =
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#e7dcc8"/><path d="M34 85V36h52v49z" fill="#c4ae8a"/><circle cx="60" cy="54" r="10" fill="#e7dcc8"/></svg>'
   );
-
-function loadSyncAuthState() {
-  try {
-    return {
-      token: String(localStorage.getItem(SYNC_AUTH_TOKEN_KEY) || ""),
-      username: String(localStorage.getItem(SYNC_AUTH_USER_KEY) || ""),
-    };
-  } catch {
-    return {
-      token: "",
-      username: "",
-    };
-  }
-}
 
 const state = {
   items: loadItems(),
@@ -156,7 +140,6 @@ const state = {
   conflictStrategy: "ask",
   brandLibraryMultiSelectMode: false,
   brandLibrarySearchQuery: "",
-  syncAuth: loadSyncAuthState(),
 };
 
 const imageEditorState = {
@@ -181,7 +164,6 @@ const imageEditorState = {
 let imageEditorRenderScheduled = false;
 let pendingAppConfirmAction = null;
 let pendingAppPromptSubmit = null;
-let pendingAppPromptCancel = null;
 let pendingSyncDecisionContext = null;
 
 const refs = {
@@ -1018,9 +1000,8 @@ function confirmAppConfirmDialog() {
   }
 }
 
-function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容", options = {}) {
+function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容") {
   pendingAppPromptSubmit = typeof onSubmit === "function" ? onSubmit : null;
-  pendingAppPromptCancel = typeof options.onCancel === "function" ? options.onCancel : null;
   if (refs.appPromptTitle) {
     refs.appPromptTitle.textContent = title;
   }
@@ -1029,58 +1010,22 @@ function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容", 
   }
   if (refs.appPromptInput) {
     refs.appPromptInput.value = String(defaultValue || "");
-    refs.appPromptInput.type = String(options.inputType || "text");
-    refs.appPromptInput.maxLength = Number(options.maxLength || 300);
-    if (options.placeholder) {
-      refs.appPromptInput.placeholder = String(options.placeholder);
-    } else {
-      refs.appPromptInput.removeAttribute("placeholder");
-    }
   }
   refs.appPromptDialog?.showModal();
 }
 
-function closeAppPromptDialog(triggerCancel = true) {
-  const cancel = pendingAppPromptCancel;
+function closeAppPromptDialog() {
   pendingAppPromptSubmit = null;
-  pendingAppPromptCancel = null;
   refs.appPromptDialog?.close();
-  if (triggerCancel && cancel) {
-    cancel();
-  }
 }
 
 function confirmAppPromptDialog() {
   const submit = pendingAppPromptSubmit;
   const value = String(refs.appPromptInput?.value || "");
-  closeAppPromptDialog(false);
+  closeAppPromptDialog();
   if (submit) {
     submit(value);
   }
-}
-
-function openAppPromptAsync({
-  message,
-  defaultValue = "",
-  title = "输入内容",
-  inputType = "text",
-  maxLength = 300,
-  placeholder = "",
-}) {
-  return new Promise((resolve) => {
-    openAppPrompt(
-      message,
-      defaultValue,
-      (value) => resolve(value),
-      title,
-      {
-        inputType,
-        maxLength,
-        placeholder,
-        onCancel: () => resolve(null),
-      }
-    );
-  });
 }
 
 function allowedSeasonsForWeather(weather) {
@@ -4654,7 +4599,6 @@ async function init() {
   initOptions();
   syncBrandCatalogFromItems(state.items);
   purgeBlockedBrands();
-  updateSyncButtonLabel();
   renderBrandOptions();
   renderAddBrandTrigger();
   bindEvents();
@@ -4843,7 +4787,7 @@ function diffLightweightIndices(localIndex, remoteIndex) {
  * 防抖触发 GitHub 同步（避免频繁上传）
  */
 function scheduleGitHubSync() {
-  if (!GITHUB_SYNC_CONFIG.isEnabled() || !isSyncAuthenticated()) {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
     return;
   }
   
@@ -5112,200 +5056,24 @@ function summarizePatchResult(patch) {
   ].join("\n");
 }
 
-function persistSyncAuth() {
-  if (state.syncAuth?.token) {
-    localStorage.setItem(SYNC_AUTH_TOKEN_KEY, state.syncAuth.token);
-  } else {
-    localStorage.removeItem(SYNC_AUTH_TOKEN_KEY);
-  }
-
-  if (state.syncAuth?.username) {
-    localStorage.setItem(SYNC_AUTH_USER_KEY, state.syncAuth.username);
-  } else {
-    localStorage.removeItem(SYNC_AUTH_USER_KEY);
-  }
-}
-
-function updateSyncButtonLabel() {
-  if (!refs.openSyncDataBtn) {
-    return;
-  }
-  if (state.syncAuth?.username) {
-    refs.openSyncDataBtn.textContent = `同步数据（${state.syncAuth.username}）`;
-  } else {
-    refs.openSyncDataBtn.textContent = "同步数据";
-  }
-}
-
-function setSyncAuthSession(token, username) {
-  state.syncAuth = {
-    token: String(token || ""),
-    username: String(username || ""),
-  };
-  persistSyncAuth();
-  updateSyncButtonLabel();
-}
-
-function clearSyncAuthSession() {
-  state.syncAuth = {
-    token: "",
-    username: "",
-  };
-  persistSyncAuth();
-  updateSyncButtonLabel();
-}
-
-function isSyncAuthenticated() {
-  return Boolean(state.syncAuth?.token);
-}
-
-async function postAuthAction(action, data, options = {}) {
-  const headers = {
-    "Content-Type": "application/json",
-  };
-
-  if (options.withAuth !== false && state.syncAuth?.token) {
-    headers.Authorization = `Bearer ${state.syncAuth.token}`;
-  }
-
-  const response = await fetch("/api/auth", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ action, data }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || `认证失败（${response.status}）`);
-  }
-  return payload;
-}
-
-async function loginSyncAccount() {
-  const username = await openAppPromptAsync({
-    title: "登录同步账号",
-    message: "请输入用户名（3-30位，字母/数字/下划线/短横线）",
-    placeholder: "例如：wardrobe_user",
-    maxLength: 30,
-  });
-  if (!username) {
-    return false;
-  }
-
-  const password = await openAppPromptAsync({
-    title: "登录同步账号",
-    message: "请输入密码",
-    inputType: "password",
-    maxLength: 64,
-  });
-  if (!password) {
-    return false;
-  }
-
-  const auth = await postAuthAction("login", { username, password }, { withAuth: false });
-  setSyncAuthSession(auth.token, auth.username || username);
-  showAppMessage(`登录成功：${auth.username || username}`, "同步账号");
-  return true;
-}
-
-async function registerSyncAccount() {
-  const username = await openAppPromptAsync({
-    title: "注册同步账号",
-    message: "设置用户名（3-30位，字母/数字/下划线/短横线）",
-    placeholder: "例如：wardrobe_user",
-    maxLength: 30,
-  });
-  if (!username) {
-    return false;
-  }
-
-  const password = await openAppPromptAsync({
-    title: "注册同步账号",
-    message: "设置密码（至少6位）",
-    inputType: "password",
-    maxLength: 64,
-  });
-  if (!password) {
-    return false;
-  }
-
-  const gistId = await openAppPromptAsync({
-    title: "注册同步账号",
-    message: "请输入你的 Gist ID（私有Gist）",
-    placeholder: "例如：a1b2c3d4...",
-    maxLength: 120,
-  });
-  if (!gistId) {
-    return false;
-  }
-
-  const githubToken = await openAppPromptAsync({
-    title: "注册同步账号",
-    message: "请输入 GitHub Token（scope: gist）",
-    inputType: "password",
-    maxLength: 300,
-  });
-  if (!githubToken) {
-    return false;
-  }
-
-  const auth = await postAuthAction(
-    "register",
-    { username, password, gistId, githubToken },
-    { withAuth: false }
-  );
-  setSyncAuthSession(auth.token, auth.username || username);
-  showAppMessage(`注册并登录成功：${auth.username || username}`, "同步账号");
-  return true;
-}
-
-async function ensureSyncAuthenticated() {
-  if (isSyncAuthenticated()) {
-    return true;
-  }
-
-  const mode = await openAppPromptAsync({
-    title: "同步账号",
-    message: "未登录同步账号。请输入 login 或 register",
-    defaultValue: "login",
-    maxLength: 10,
-  });
-
-  if (!mode) {
-    return false;
-  }
-
-  const normalizedMode = String(mode).trim().toLowerCase();
-  if (normalizedMode === "register") {
-    return registerSyncAccount();
-  }
-
-  return loginSyncAccount();
-}
-
 async function postSyncAction(action, data) {
   if (!GITHUB_SYNC_CONFIG.isEnabled()) {
     throw new Error("GitHub Sync 未启用");
   }
 
-  const syncUrl = "/api/sync";
+  // 在 Pages 环境中，使用本地代理路由；否则使用 Worker URL
+  const syncUrl = typeof window !== 'undefined' && window.location.hostname.includes('pages.dev')
+    ? '/api/sync'
+    : GITHUB_SYNC_CONFIG.getWorkerUrl();
   
   try {
     const response = await fetch(syncUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${state.syncAuth?.token || ""}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, data }),
     });
-    if (response.status === 401) {
-      clearSyncAuthSession();
-      throw new Error("同步登录已失效，请重新登录。");
-    }
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.error || `同步失败（${response.status}）`);
+      throw new Error(`同步失败（${response.status}）`);
     }
     return response.json();
   } catch (err) {
@@ -5531,7 +5299,7 @@ async function chooseRemoteSyncDecision() {
 }
 
 async function pushLocalDiffToGitHub() {
-  if (!GITHUB_SYNC_CONFIG.isEnabled() || !isSyncAuthenticated()) {
+  if (!GITHUB_SYNC_CONFIG.isEnabled()) {
     return;
   }
 
@@ -5598,14 +5366,7 @@ async function pushLocalDiffToGitHub() {
 async function runSyncFlow(source = "manual", options = {}) {
   if (!GITHUB_SYNC_CONFIG.isEnabled()) {
     if (source === "manual") {
-      showAppMessage("同步服务未启用。", "同步未启用");
-    }
-    return;
-  }
-
-  if (!(await ensureSyncAuthenticated())) {
-    if (source === "manual") {
-      showAppMessage("未完成同步登录，已取消本次同步。", "同步取消");
+      showAppMessage("请先配置 GitHub 同步 Worker 地址。", "同步未启用");
     }
     return;
   }
