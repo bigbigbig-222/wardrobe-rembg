@@ -103,6 +103,9 @@ const STORAGE_KEY = "virtual-wardrobe-items-v3";
 const FAVORITE_LOOKS_KEY = "virtual-wardrobe-favorite-looks-v1";
 const BRAND_CATALOG_KEY = "virtual-wardrobe-brand-catalog-v1";
 const BRAND_LOGOS_KEY = "virtual-wardrobe-brand-logos-v1";
+const ACTIVE_USER_KEY = "virtual-wardrobe-active-user-v1";
+const KNOWN_USERS_KEY = "virtual-wardrobe-known-users-v1";
+const LEGACY_USER_MIGRATION_KEY = "virtual-wardrobe-legacy-user-migrated-v1";
 const BLANK_BRAND_LOGO =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
@@ -119,6 +122,7 @@ const state = {
   favoriteLooks: loadFavoriteLooks(),
   brandCatalog: loadBrandCatalog(),
   brandLogos: loadBrandLogos(),
+  currentUsername: loadPersistedActiveUsername(),
   imageDataList: [],
   coverImageIndex: 0,
   editingId: "",
@@ -165,6 +169,9 @@ let imageEditorRenderScheduled = false;
 let pendingAppConfirmAction = null;
 let pendingAppPromptSubmit = null;
 let pendingSyncDecisionContext = null;
+let userMenuOpen = false;
+let pendingAppConfirmResolve = null;
+let pendingAppPromptResolve = null;
 
 const refs = {
         editorDoCutoutBtn: document.getElementById("editorDoCutoutBtn"),
@@ -310,6 +317,11 @@ const refs = {
   recommendPanel: document.getElementById("recommendPanel"),
   wardrobeActions: document.getElementById("wardrobeActions"),
   ioMenu: document.getElementById("ioMenu"),
+  userMenuWrap: document.getElementById("userMenuWrap"),
+  userMenuBtn: document.getElementById("userMenuBtn"),
+  userMenuPanel: document.getElementById("userMenuPanel"),
+  currentUsernameText: document.getElementById("currentUsernameText"),
+  logoutUserBtn: document.getElementById("logoutUserBtn"),
   weatherInfo: document.getElementById("weatherInfo"),
   weatherIcon: document.getElementById("weatherIcon"),
   refreshWeatherBtn: document.getElementById("refreshWeatherBtn"),
@@ -370,6 +382,193 @@ const refs = {
   importJsonInput: document.getElementById("importJsonInput"),
 };
 
+function normalizeUsername(value) {
+  return String(value || "").trim().slice(0, 20);
+}
+
+function isValidUsername(username) {
+  return /^[\u4e00-\u9fa5A-Za-z0-9_-]{1,20}$/u.test(String(username || ""));
+}
+
+function loadPersistedActiveUsername() {
+  const username = normalizeUsername(localStorage.getItem(ACTIVE_USER_KEY));
+  return isValidUsername(username) ? username : "";
+}
+
+function loadKnownUsernames() {
+  try {
+    const raw = localStorage.getItem(KNOWN_USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const seen = new Set();
+    const result = [];
+    for (const value of parsed) {
+      const username = normalizeUsername(value);
+      const key = username.toLowerCase();
+      if (!isValidUsername(username) || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(username);
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+function saveKnownUsernames(usernames) {
+  localStorage.setItem(KNOWN_USERS_KEY, JSON.stringify(usernames));
+}
+
+function findKnownUsername(username) {
+  const target = normalizeUsername(username).toLowerCase();
+  if (!target) {
+    return "";
+  }
+  const users = loadKnownUsernames();
+  return users.find((entry) => entry.toLowerCase() === target) || "";
+}
+
+function ensureKnownUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (!isValidUsername(normalized)) {
+    return "";
+  }
+  const users = loadKnownUsernames();
+  const hit = users.find((entry) => entry.toLowerCase() === normalized.toLowerCase());
+  if (hit) {
+    return hit;
+  }
+  users.push(normalized);
+  saveKnownUsernames(users);
+  return normalized;
+}
+
+function getActiveUsername() {
+  const stored = loadPersistedActiveUsername();
+  if (!stored) {
+    return "";
+  }
+  return findKnownUsername(stored) || stored;
+}
+
+function setActiveUsername(username) {
+  const normalized = ensureKnownUsername(username);
+  if (!normalized) {
+    return false;
+  }
+  localStorage.setItem(ACTIVE_USER_KEY, normalized);
+  migrateLegacyDataToUser(normalized);
+  state.currentUsername = normalized;
+  updateUserMenuUi();
+  return true;
+}
+
+function clearActiveUsername() {
+  localStorage.removeItem(ACTIVE_USER_KEY);
+  state.currentUsername = "";
+  updateUserMenuUi();
+}
+
+function buildScopedStorageKey(baseKey) {
+  const username = getActiveUsername();
+  return username ? buildScopedStorageKeyForUsername(baseKey, username) : `${baseKey}::guest`;
+}
+
+function buildScopedStorageKeyForUsername(baseKey, username) {
+  const normalized = normalizeUsername(username).toLowerCase();
+  return `${baseKey}::user::${normalized}`;
+}
+
+function migrateLegacyDataToUser(username) {
+  const migrationDone = localStorage.getItem(LEGACY_USER_MIGRATION_KEY) === "1";
+  if (migrationDone) {
+    return;
+  }
+
+  const normalized = normalizeUsername(username);
+  if (!normalized) {
+    return;
+  }
+
+  const baseKeys = [STORAGE_KEY, FAVORITE_LOOKS_KEY, BRAND_CATALOG_KEY, BRAND_LOGOS_KEY];
+  const hasLegacyData = baseKeys.some((baseKey) => localStorage.getItem(baseKey));
+  if (!hasLegacyData) {
+    localStorage.setItem(LEGACY_USER_MIGRATION_KEY, "1");
+    return;
+  }
+
+  for (const baseKey of baseKeys) {
+    const scopedKey = buildScopedStorageKeyForUsername(baseKey, normalized);
+    const scopedExists = localStorage.getItem(scopedKey);
+    if (scopedExists) {
+      continue;
+    }
+    const legacyValue = localStorage.getItem(baseKey);
+    if (legacyValue) {
+      localStorage.setItem(scopedKey, legacyValue);
+    }
+  }
+
+  localStorage.setItem(LEGACY_USER_MIGRATION_KEY, "1");
+}
+
+function updateUserMenuUi() {
+  const username = getActiveUsername();
+  if (refs.currentUsernameText) {
+    refs.currentUsernameText.textContent = username || "未登录";
+  }
+}
+
+function toggleUserMenu(forceOpen) {
+  if (!refs.userMenuPanel || !refs.userMenuBtn) {
+    return;
+  }
+  const nextOpen = typeof forceOpen === "boolean" ? forceOpen : !userMenuOpen;
+  userMenuOpen = nextOpen;
+  refs.userMenuPanel.hidden = !nextOpen;
+  refs.userMenuBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+}
+
+function closeUserMenu() {
+  toggleUserMenu(false);
+}
+
+function reloadStateForActiveUser() {
+  state.items = loadItems();
+  state.favoriteLooks = loadFavoriteLooks();
+  state.brandCatalog = loadBrandCatalog();
+  state.brandLogos = loadBrandLogos();
+  state.currentRecommendations = [];
+  state.activeCategory = "all";
+  state.manualLookDraft = {
+    topId: "",
+    bottomId: "",
+    shoesId: "",
+    accessoryId: "",
+  };
+  state.manualLookPickerTarget = "";
+  state.brandLibrarySearchQuery = "";
+  state.brandLibraryMultiSelectMode = false;
+}
+
+function refreshAllByActiveUser() {
+  initOptions();
+  syncBrandCatalogFromItems(state.items);
+  purgeBlockedBrands();
+  renderBrandOptions();
+  renderAddBrandTrigger();
+  renderCategories();
+  renderClothes();
+  renderLockOptions();
+  renderRecommendations();
+  renderFavoriteLooks();
+  updateUserMenuUi();
+}
+
 function normalizeItem(raw) {
   const category = CATEGORY_LIST.includes(raw.category) ? raw.category : CATEGORY_LIST[0];
   const season = SEASON_LIST.includes(raw.season) ? raw.season : "四季";
@@ -397,7 +596,7 @@ function normalizeItem(raw) {
 
 function loadItems() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(buildScopedStorageKey(STORAGE_KEY));
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) {
       return [];
@@ -410,7 +609,7 @@ function loadItems() {
 
 function loadFavoriteLooks() {
   try {
-    const raw = localStorage.getItem(FAVORITE_LOOKS_KEY);
+    const raw = localStorage.getItem(buildScopedStorageKey(FAVORITE_LOOKS_KEY));
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -420,7 +619,7 @@ function loadFavoriteLooks() {
 
 function saveItems(options = {}) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+    localStorage.setItem(buildScopedStorageKey(STORAGE_KEY), JSON.stringify(state.items));
     if (!options.skipSync) {
       scheduleGitHubSync();
     }
@@ -431,7 +630,7 @@ function saveItems(options = {}) {
 }
 
 function saveFavoriteLooks(options = {}) {
-  localStorage.setItem(FAVORITE_LOOKS_KEY, JSON.stringify(state.favoriteLooks));
+  localStorage.setItem(buildScopedStorageKey(FAVORITE_LOOKS_KEY), JSON.stringify(state.favoriteLooks));
   if (!options.skipSync) {
     scheduleGitHubSync();
   }
@@ -516,7 +715,7 @@ function buildPresetBrandLogos() {
 
 function loadBrandCatalog() {
   try {
-    const raw = localStorage.getItem(BRAND_CATALOG_KEY);
+    const raw = localStorage.getItem(buildScopedStorageKey(BRAND_CATALOG_KEY));
     const parsed = raw ? JSON.parse(raw) : [];
     const stored = Array.isArray(parsed) ? parsed : [];
     return dedupeBrands([...MAJOR_BRAND_LIST, ...OUTDOOR_BRAND_LIST, ...stored]);
@@ -526,7 +725,7 @@ function loadBrandCatalog() {
 }
 
 function saveBrandCatalog(options = {}) {
-  localStorage.setItem(BRAND_CATALOG_KEY, JSON.stringify(dedupeBrands(state.brandCatalog)));
+  localStorage.setItem(buildScopedStorageKey(BRAND_CATALOG_KEY), JSON.stringify(dedupeBrands(state.brandCatalog)));
   if (!options.skipSync) {
     scheduleGitHubSync();
   }
@@ -534,7 +733,7 @@ function saveBrandCatalog(options = {}) {
 
 function loadBrandLogos() {
   try {
-    const raw = localStorage.getItem(BRAND_LOGOS_KEY);
+    const raw = localStorage.getItem(buildScopedStorageKey(BRAND_LOGOS_KEY));
     const parsed = raw ? JSON.parse(raw) : {};
     const stored = parsed && typeof parsed === "object" ? parsed : {};
     const preset = buildPresetBrandLogos();
@@ -548,7 +747,7 @@ function loadBrandLogos() {
 }
 
 function saveBrandLogos(options = {}) {
-  localStorage.setItem(BRAND_LOGOS_KEY, JSON.stringify(state.brandLogos));
+  localStorage.setItem(buildScopedStorageKey(BRAND_LOGOS_KEY), JSON.stringify(state.brandLogos));
   if (!options.skipSync) {
     scheduleGitHubSync();
   }
@@ -987,17 +1186,29 @@ function openAppConfirm(message, onConfirm, title = "请确认") {
   refs.appConfirmDialog?.showModal();
 }
 
-function closeAppConfirmDialog() {
+function closeAppConfirmDialog(confirmed = false) {
   pendingAppConfirmAction = null;
+  const resolve = pendingAppConfirmResolve;
+  pendingAppConfirmResolve = null;
   refs.appConfirmDialog?.close();
+  if (resolve) {
+    resolve(Boolean(confirmed));
+  }
 }
 
 function confirmAppConfirmDialog() {
   const action = pendingAppConfirmAction;
-  closeAppConfirmDialog();
+  closeAppConfirmDialog(true);
   if (action) {
     action();
   }
+}
+
+function openAppConfirmAsync(message, title = "请确认") {
+  return new Promise((resolve) => {
+    pendingAppConfirmResolve = resolve;
+    openAppConfirm(message, null, title);
+  });
 }
 
 function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容") {
@@ -1014,18 +1225,118 @@ function openAppPrompt(message, defaultValue, onSubmit, title = "输入内容") 
   refs.appPromptDialog?.showModal();
 }
 
-function closeAppPromptDialog() {
+function closeAppPromptDialog(resultValue = null) {
   pendingAppPromptSubmit = null;
+  const resolve = pendingAppPromptResolve;
+  pendingAppPromptResolve = null;
   refs.appPromptDialog?.close();
+  if (resolve) {
+    resolve(resultValue);
+  }
 }
 
 function confirmAppPromptDialog() {
   const submit = pendingAppPromptSubmit;
   const value = String(refs.appPromptInput?.value || "");
-  closeAppPromptDialog();
+  closeAppPromptDialog(value);
   if (submit) {
     submit(value);
   }
+}
+
+function openAppPromptAsync({
+  title = "输入内容",
+  message = "",
+  defaultValue = "",
+  placeholder = "",
+  maxLength = 20,
+  inputType = "text",
+} = {}) {
+  const input = refs.appPromptInput;
+  if (!input) {
+    return Promise.resolve(null);
+  }
+
+  const prevType = input.type;
+  const prevPlaceholder = input.placeholder;
+  const prevMaxLength = input.maxLength;
+
+  input.type = inputType === "password" ? "password" : "text";
+  input.placeholder = String(placeholder || "");
+  input.maxLength = Number(maxLength) || 20;
+
+  return new Promise((resolve) => {
+    pendingAppPromptResolve = (result) => {
+      input.type = prevType;
+      input.placeholder = prevPlaceholder;
+      input.maxLength = prevMaxLength;
+      resolve(result);
+    };
+    openAppPrompt(message, defaultValue, null, title);
+    refs.appPromptInput?.focus();
+  });
+}
+
+async function ensureActiveUserReady() {
+  const current = getActiveUsername();
+  if (current) {
+    ensureKnownUsername(current);
+    state.currentUsername = current;
+    updateUserMenuUi();
+    return true;
+  }
+
+  while (true) {
+    const input = await openAppPromptAsync({
+      title: "进入衣柜",
+      message: "请输入用户名（首次进入必须输入）",
+      placeholder: "例如：小明",
+      maxLength: 20,
+    });
+
+    const username = normalizeUsername(input);
+    if (!username) {
+      showAppMessage("需要输入用户名才能进入。", "请输入用户名");
+      continue;
+    }
+
+    if (!isValidUsername(username)) {
+      showAppMessage("用户名仅支持中文、字母、数字、下划线和短横线，且长度不超过20位。", "用户名无效");
+      continue;
+    }
+
+    const existing = findKnownUsername(username);
+    if (existing) {
+      setActiveUsername(existing);
+      return true;
+    }
+
+    const shouldCreate = await openAppConfirmAsync(`用户名“${username}”不存在，是否新建该用户？`, "新建用户");
+    if (!shouldCreate) {
+      continue;
+    }
+
+    setActiveUsername(username);
+    return true;
+  }
+}
+
+async function logoutCurrentUser() {
+  const current = getActiveUsername();
+  if (!current) {
+    return;
+  }
+
+  const shouldLogout = await openAppConfirmAsync(`确认退出当前用户“${current}”？`, "退出当前用户");
+  if (!shouldLogout) {
+    return;
+  }
+
+  closeUserMenu();
+  clearActiveUsername();
+  await ensureActiveUserReady();
+  reloadStateForActiveUser();
+  refreshAllByActiveUser();
 }
 
 function allowedSeasonsForWeather(weather) {
@@ -4410,6 +4721,9 @@ function bindEvents() {
     if (!refs.addBrandWrap.contains(event.target)) {
       toggleAddBrandMenu(false);
     }
+    if (refs.userMenuWrap && !refs.userMenuWrap.contains(event.target)) {
+      closeUserMenu();
+    }
   });
 
   refs.addCategory.addEventListener("change", (e) => updateSizeOptions(e.target.value));
@@ -4436,6 +4750,10 @@ function bindEvents() {
     refs.ioMenu?.removeAttribute("open");
     runSyncFlow("manual");
   });
+  refs.userMenuBtn?.addEventListener("click", () => {
+    toggleUserMenu();
+  });
+  refs.logoutUserBtn?.addEventListener("click", logoutCurrentUser);
   refs.openManualLookBtn?.addEventListener("click", openManualLookDialog);
   refs.closeManualLookDialog?.addEventListener("click", closeManualLookDialog);
   refs.cancelManualLook?.addEventListener("click", closeManualLookDialog);
@@ -4596,12 +4914,15 @@ async function removeImageBackground(imageData) {
 }
 
 async function init() {
+  bindEvents();
+  await ensureActiveUserReady();
+  reloadStateForActiveUser();
   initOptions();
   syncBrandCatalogFromItems(state.items);
   purgeBlockedBrands();
   renderBrandOptions();
   renderAddBrandTrigger();
-  bindEvents();
+  updateUserMenuUi();
   renderCategories();
   renderClothes();
   renderLockOptions();

@@ -84,6 +84,19 @@
               <input id="importJsonInput" type="file" accept="application/json,.csv,text/csv" hidden />
             </div>
           </div>
+          <div class="user-menu-wrap" id="userMenuWrap">
+            <button class="user-menu-btn" id="userMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="用户菜单">
+              <svg class="user-menu-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="12" cy="8" r="4" fill="currentColor"/>
+                <path d="M4 20c0-3.866 3.582-7 8-7s8 3.134 8 7" fill="currentColor" opacity="0.65"/>
+              </svg>
+            </button>
+            <div class="user-menu-panel" id="userMenuPanel" hidden>
+              <p class="user-menu-title">当前用户</p>
+              <p class="user-menu-name" id="currentUsernameText">未登录</p>
+              <button class="btn btn--ghost user-menu-logout" id="logoutUserBtn" type="button">退出当前用户</button>
+            </div>
+          </div>
           <div class="weather-widget" aria-live="polite">
             <img id="weatherIcon" class="weather-widget__icon" src="assets/weather-cloud.svg" alt="天气图标" />
             <span class="weather-widget__text" id="weatherInfo">天气加载中...</span>

@@ -313,9 +313,73 @@ body {
   background: #f7eddb;
 }
 
-.weather-widget {
+.user-menu-wrap {
   position: absolute;
   top: 12px;
+  right: 12px;
+  z-index: 5;
+}
+
+.user-menu-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.user-menu-btn:hover,
+.user-menu-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.user-menu-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 168px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #d9cab3;
+  background: #fff9ef;
+  box-shadow: 0 10px 24px rgba(25, 20, 10, 0.2);
+  color: #2f2a22;
+}
+
+.user-menu-title {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #6c5d46;
+}
+
+.user-menu-name {
+  margin: 4px 0 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.user-menu-logout {
+  width: 100%;
+  min-height: 30px;
+  font-size: 0.78rem;
+}
+
+.weather-widget {
+  position: absolute;
+  top: 48px;
   right: 12px;
   display: grid;
   grid-template-rows: auto 1fr;
@@ -1701,6 +1765,11 @@ button:focus-visible {
   .weather-widget {
     width: 96px;
     height: 96px;
+    top: 52px;
+    right: 14px;
+  }
+
+  .user-menu-wrap {
     top: 14px;
     right: 14px;
   }
