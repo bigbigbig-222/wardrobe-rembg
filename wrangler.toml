@@ -2,5 +2,10 @@ name = "wardrobe-rembg"
 main = "github-sync-worker.js"
 compatibility_date = "2024-01-01"
 
+# 方案1所需：账号数据存储（Cloudflare KV）
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID"
+
 [env.production]
 name = "wardrobe-rembg"
