@@ -626,42 +626,6 @@
       </div>
     </dialog>
 
-    <dialog id="syncAuthDialog" class="add-dialog">
-      <form id="syncAuthForm" class="dialog-card dialog-card--mini" method="dialog" autocomplete="off">
-        <header class="dialog-card__header">
-          <h3 id="syncAuthDialogTitle">登录同步账号</h3>
-          <button class="close-btn" id="closeSyncAuthDialogBtn" type="button" aria-label="关闭">×</button>
-        </header>
-        <div class="dialog-card__body">
-          <input id="syncAuthMode" type="hidden" value="login" />
-          <label>
-            用户名
-            <input id="syncAuthUsername" type="text" maxlength="30" required placeholder="例如：wardrobe_user" />
-          </label>
-          <label>
-            密码
-            <input id="syncAuthPassword" type="password" maxlength="64" required placeholder="至少6位" />
-          </label>
-          <div id="syncAuthRegisterFields" hidden>
-            <label>
-              Gist ID
-              <input id="syncAuthGistId" type="text" maxlength="120" placeholder="你的私有 Gist ID" />
-            </label>
-            <label>
-              GitHub Token（gist权限）
-              <input id="syncAuthGithubToken" type="password" maxlength="300" placeholder="ghp_..." />
-            </label>
-          </div>
-          <p id="syncAuthError" class="sync-auth-error" aria-live="polite"></p>
-          <button class="btn btn--ghost sync-auth-switch" id="syncAuthSwitchModeBtn" type="button">没有账号？去注册</button>
-        </div>
-        <footer class="dialog-card__footer">
-          <button class="btn btn--ghost" id="cancelSyncAuthBtn" type="button">取消</button>
-          <button class="btn btn--primary" id="confirmSyncAuthBtn" type="submit">登录</button>
-        </footer>
-      </form>
-    </dialog>
-
     <dialog id="appPromptDialog" class="add-dialog">
       <div class="dialog-card dialog-card--mini">
         <header class="dialog-card__header">

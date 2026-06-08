@@ -182,7 +182,6 @@ let imageEditorRenderScheduled = false;
 let pendingAppConfirmAction = null;
 let pendingAppPromptSubmit = null;
 let pendingAppPromptCancel = null;
-let pendingSyncAuthResolve = null;
 let pendingSyncDecisionContext = null;
 
 const refs = {
@@ -376,20 +375,6 @@ const refs = {
   cancelSyncDecisionBtn: document.getElementById("cancelSyncDecisionBtn"),
   chooseLocalSyncBtn: document.getElementById("chooseLocalSyncBtn"),
   chooseRemoteSyncBtn: document.getElementById("chooseRemoteSyncBtn"),
-  syncAuthDialog: document.getElementById("syncAuthDialog"),
-  syncAuthDialogTitle: document.getElementById("syncAuthDialogTitle"),
-  closeSyncAuthDialogBtn: document.getElementById("closeSyncAuthDialogBtn"),
-  syncAuthForm: document.getElementById("syncAuthForm"),
-  syncAuthMode: document.getElementById("syncAuthMode"),
-  syncAuthUsername: document.getElementById("syncAuthUsername"),
-  syncAuthPassword: document.getElementById("syncAuthPassword"),
-  syncAuthRegisterFields: document.getElementById("syncAuthRegisterFields"),
-  syncAuthGistId: document.getElementById("syncAuthGistId"),
-  syncAuthGithubToken: document.getElementById("syncAuthGithubToken"),
-  syncAuthError: document.getElementById("syncAuthError"),
-  syncAuthSwitchModeBtn: document.getElementById("syncAuthSwitchModeBtn"),
-  cancelSyncAuthBtn: document.getElementById("cancelSyncAuthBtn"),
-  confirmSyncAuthBtn: document.getElementById("confirmSyncAuthBtn"),
   appPromptDialog: document.getElementById("appPromptDialog"),
   appPromptTitle: document.getElementById("appPromptTitle"),
   appPromptText: document.getElementById("appPromptText"),
@@ -4564,10 +4549,6 @@ function bindEvents() {
   refs.cancelSyncDecisionBtn?.addEventListener("click", closeSyncDecisionDialog);
   refs.chooseLocalSyncBtn?.addEventListener("click", chooseLocalSyncDecision);
   refs.chooseRemoteSyncBtn?.addEventListener("click", chooseRemoteSyncDecision);
-  refs.syncAuthForm?.addEventListener("submit", onSyncAuthSubmit);
-  refs.closeSyncAuthDialogBtn?.addEventListener("click", () => closeSyncAuthDialog(false));
-  refs.cancelSyncAuthBtn?.addEventListener("click", () => closeSyncAuthDialog(false));
-  refs.syncAuthSwitchModeBtn?.addEventListener("click", toggleSyncAuthMode);
   refs.closeAppPromptDialog?.addEventListener("click", closeAppPromptDialog);
   refs.cancelAppPromptBtn?.addEventListener("click", closeAppPromptDialog);
   refs.confirmAppPromptBtn?.addEventListener("click", confirmAppPromptDialog);
@@ -4590,10 +4571,6 @@ function bindEvents() {
   refs.syncDecisionDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
     closeSyncDecisionDialog();
-  });
-  refs.syncAuthDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeSyncAuthDialog(false);
   });
   refs.appPromptDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
@@ -5204,102 +5181,106 @@ async function postAuthAction(action, data, options = {}) {
   return payload;
 }
 
-function renderSyncAuthMode() {
-  const mode = String(refs.syncAuthMode?.value || "login");
-  const isRegister = mode === "register";
-
-  if (refs.syncAuthDialogTitle) {
-    refs.syncAuthDialogTitle.textContent = isRegister ? "注册同步账号" : "登录同步账号";
-  }
-  if (refs.syncAuthRegisterFields) {
-    refs.syncAuthRegisterFields.hidden = !isRegister;
-  }
-  if (refs.confirmSyncAuthBtn) {
-    refs.confirmSyncAuthBtn.textContent = isRegister ? "注册并登录" : "登录";
-  }
-  if (refs.syncAuthSwitchModeBtn) {
-    refs.syncAuthSwitchModeBtn.textContent = isRegister ? "已有账号？去登录" : "没有账号？去注册";
-  }
-}
-
-function openSyncAuthDialog(mode = "login") {
-  if (refs.syncAuthForm) {
-    refs.syncAuthForm.reset();
-  }
-  if (refs.syncAuthError) {
-    refs.syncAuthError.textContent = "";
-  }
-  if (refs.syncAuthMode) {
-    refs.syncAuthMode.value = mode;
-  }
-  renderSyncAuthMode();
-  refs.syncAuthDialog?.showModal();
-}
-
-function closeSyncAuthDialog(result = false) {
-  refs.syncAuthDialog?.close();
-  if (pendingSyncAuthResolve) {
-    pendingSyncAuthResolve(Boolean(result));
-    pendingSyncAuthResolve = null;
-  }
-}
-
-async function onSyncAuthSubmit(event) {
-  event.preventDefault();
-
-  const mode = String(refs.syncAuthMode?.value || "login");
-  const username = String(refs.syncAuthUsername?.value || "").trim();
-  const password = String(refs.syncAuthPassword?.value || "");
-  const gistId = String(refs.syncAuthGistId?.value || "").trim();
-  const githubToken = String(refs.syncAuthGithubToken?.value || "").trim();
-
-  if (refs.syncAuthError) {
-    refs.syncAuthError.textContent = "";
-  }
-
-  try {
-    let auth;
-    if (mode === "register") {
-      auth = await postAuthAction(
-        "register",
-        { username, password, gistId, githubToken },
-        { withAuth: false }
-      );
-      showAppMessage(`注册并登录成功：${auth.username || username}`, "同步账号");
-    } else {
-      auth = await postAuthAction("login", { username, password }, { withAuth: false });
-      showAppMessage(`登录成功：${auth.username || username}`, "同步账号");
-    }
-
-    setSyncAuthSession(auth.token, auth.username || username);
-    closeSyncAuthDialog(true);
-  } catch (error) {
-    if (refs.syncAuthError) {
-      refs.syncAuthError.textContent = error.message || "登录失败，请重试。";
-    }
-  }
-}
-
-function toggleSyncAuthMode() {
-  if (!refs.syncAuthMode) {
-    return;
-  }
-  refs.syncAuthMode.value = refs.syncAuthMode.value === "register" ? "login" : "register";
-  renderSyncAuthMode();
-}
-
-function waitForSyncAuth(mode = "login") {
-  return new Promise((resolve) => {
-    pendingSyncAuthResolve = resolve;
-    openSyncAuthDialog(mode);
+async function loginSyncAccount() {
+  const username = await openAppPromptAsync({
+    title: "登录同步账号",
+    message: "请输入用户名（3-30位，字母/数字/下划线/短横线）",
+    placeholder: "例如：wardrobe_user",
+    maxLength: 30,
   });
+  if (!username) {
+    return false;
+  }
+
+  const password = await openAppPromptAsync({
+    title: "登录同步账号",
+    message: "请输入密码",
+    inputType: "password",
+    maxLength: 64,
+  });
+  if (!password) {
+    return false;
+  }
+
+  const auth = await postAuthAction("login", { username, password }, { withAuth: false });
+  setSyncAuthSession(auth.token, auth.username || username);
+  showAppMessage(`登录成功：${auth.username || username}`, "同步账号");
+  return true;
+}
+
+async function registerSyncAccount() {
+  const username = await openAppPromptAsync({
+    title: "注册同步账号",
+    message: "设置用户名（3-30位，字母/数字/下划线/短横线）",
+    placeholder: "例如：wardrobe_user",
+    maxLength: 30,
+  });
+  if (!username) {
+    return false;
+  }
+
+  const password = await openAppPromptAsync({
+    title: "注册同步账号",
+    message: "设置密码（至少6位）",
+    inputType: "password",
+    maxLength: 64,
+  });
+  if (!password) {
+    return false;
+  }
+
+  const gistId = await openAppPromptAsync({
+    title: "注册同步账号",
+    message: "请输入你的 Gist ID（私有Gist）",
+    placeholder: "例如：a1b2c3d4...",
+    maxLength: 120,
+  });
+  if (!gistId) {
+    return false;
+  }
+
+  const githubToken = await openAppPromptAsync({
+    title: "注册同步账号",
+    message: "请输入 GitHub Token（scope: gist）",
+    inputType: "password",
+    maxLength: 300,
+  });
+  if (!githubToken) {
+    return false;
+  }
+
+  const auth = await postAuthAction(
+    "register",
+    { username, password, gistId, githubToken },
+    { withAuth: false }
+  );
+  setSyncAuthSession(auth.token, auth.username || username);
+  showAppMessage(`注册并登录成功：${auth.username || username}`, "同步账号");
+  return true;
 }
 
 async function ensureSyncAuthenticated() {
   if (isSyncAuthenticated()) {
     return true;
   }
-  return waitForSyncAuth("login");
+
+  const mode = await openAppPromptAsync({
+    title: "同步账号",
+    message: "未登录同步账号。请输入 login 或 register",
+    defaultValue: "login",
+    maxLength: 10,
+  });
+
+  if (!mode) {
+    return false;
+  }
+
+  const normalizedMode = String(mode).trim().toLowerCase();
+  if (normalizedMode === "register") {
+    return registerSyncAccount();
+  }
+
+  return loginSyncAccount();
 }
 
 async function postSyncAction(action, data) {
