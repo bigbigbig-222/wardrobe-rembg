@@ -1187,6 +1187,20 @@ button:focus-visible {
   border-top: 1px solid #e6d6be;
 }
 
+.sync-auth-error {
+  margin: 0;
+  min-height: 1.2em;
+  color: #a83f29;
+  font-size: 0.84rem;
+}
+
+.sync-auth-switch {
+  justify-self: start;
+  min-height: 30px;
+  font-size: 0.8rem;
+  padding: 0 10px;
+}
+
 .close-btn {
   width: 36px;
   height: 36px;
