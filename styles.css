@@ -1221,6 +1221,11 @@ button:focus-visible {
   padding: 12px;
 }
 
+.dialog-card__body input:not([type="file"]):not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .image-upload-block {
   border: 1px dashed #d9c3a3;
   border-radius: 12px;
