@@ -347,8 +347,6 @@ body {
 
 .user-menu-panel {
   position: fixed;
-  top: 56px;
-  right: 14px;
   z-index: 9000;
   width: 168px;
   padding: 10px;
@@ -1778,11 +1776,6 @@ button:focus-visible {
   .user-menu-wrap {
     top: 14px;
     right: 14px;
-  }
-
-  .user-menu-panel {
-    top: 60px;
-    right: 16px;
   }
 
   .category-grid {
