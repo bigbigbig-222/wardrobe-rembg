@@ -346,15 +346,19 @@ body {
 }
 
 .user-menu-panel {
+  /* Reset browser popover UA styles */
   position: fixed;
-  z-index: 9000;
-  width: 168px;
+  inset: auto;
+  margin: 0;
+  border: 1px solid #d9cab3;
   padding: 10px;
   border-radius: 10px;
-  border: 1px solid #d9cab3;
   background: #fff9ef;
   box-shadow: 0 10px 24px rgba(25, 20, 10, 0.2);
   color: #2f2a22;
+  width: 168px;
+  /* Fallback z-index for browsers without Popover API */
+  z-index: 9000;
 }
 
 .user-menu-title {

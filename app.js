@@ -529,13 +529,25 @@ function toggleUserMenu(forceOpen) {
   }
   const nextOpen = typeof forceOpen === "boolean" ? forceOpen : !userMenuOpen;
   userMenuOpen = nextOpen;
-  refs.userMenuPanel.hidden = !nextOpen;
   refs.userMenuBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
 
   if (nextOpen) {
     const r = refs.userMenuBtn.getBoundingClientRect();
     refs.userMenuPanel.style.top = (r.bottom + 6) + "px";
     refs.userMenuPanel.style.right = (window.innerWidth - r.right) + "px";
+    refs.userMenuPanel.style.left = "auto";
+    refs.userMenuPanel.style.margin = "0";
+    if (typeof refs.userMenuPanel.showPopover === "function") {
+      try { refs.userMenuPanel.showPopover(); } catch (e) { refs.userMenuPanel.hidden = false; }
+    } else {
+      refs.userMenuPanel.hidden = false;
+    }
+  } else {
+    if (typeof refs.userMenuPanel.hidePopover === "function") {
+      try { refs.userMenuPanel.hidePopover(); } catch (e) { refs.userMenuPanel.hidden = true; }
+    } else {
+      refs.userMenuPanel.hidden = true;
+    }
   }
 }
 
@@ -4727,7 +4739,10 @@ function bindEvents() {
     if (!refs.addBrandWrap.contains(event.target)) {
       toggleAddBrandMenu(false);
     }
-    if (refs.userMenuWrap && !refs.userMenuWrap.contains(event.target)) {
+    if (
+      refs.userMenuWrap && !refs.userMenuWrap.contains(event.target) &&
+      refs.userMenuPanel && !refs.userMenuPanel.contains(event.target)
+    ) {
       closeUserMenu();
     }
   });
