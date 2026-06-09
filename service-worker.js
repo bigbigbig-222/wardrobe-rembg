@@ -1,6 +1,6 @@
 // Service Worker for caching app resources and proxied real brand logos.
-const CACHE_NAME = 'wardrobe-cache-v8';
-const LOGO_CACHE = 'wardrobe-logos-v8';
+const CACHE_NAME = 'wardrobe-cache-v9';
+const LOGO_CACHE = 'wardrobe-logos-v9';
 
 const URLS_TO_CACHE = [
   '/',
