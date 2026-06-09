@@ -314,10 +314,10 @@ body {
 }
 
 .user-menu-wrap {
-  position: fixed;
+  position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 9000;
+  z-index: 20;
 }
 
 .user-menu-btn {
@@ -346,9 +346,8 @@ body {
 }
 
 .user-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
+  z-index: 9000;
   width: 168px;
   padding: 10px;
   border-radius: 10px;
