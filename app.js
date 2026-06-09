@@ -531,14 +531,6 @@ function toggleUserMenu(forceOpen) {
   userMenuOpen = nextOpen;
   refs.userMenuPanel.hidden = !nextOpen;
   refs.userMenuBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-
-  if (nextOpen) {
-    const rect = refs.userMenuBtn.getBoundingClientRect();
-    refs.userMenuPanel.style.top = (rect.bottom + 6) + "px";
-    // Align right edge of panel to right edge of button
-    refs.userMenuPanel.style.right = (document.documentElement.clientWidth - rect.right) + "px";
-    refs.userMenuPanel.style.left = "";
-  }
 }
 
 function closeUserMenu() {
