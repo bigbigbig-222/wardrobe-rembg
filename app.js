@@ -370,6 +370,9 @@ const refs = {
   cancelSyncDecisionBtn: document.getElementById("cancelSyncDecisionBtn"),
   chooseLocalSyncBtn: document.getElementById("chooseLocalSyncBtn"),
   chooseRemoteSyncBtn: document.getElementById("chooseRemoteSyncBtn"),
+  syncProgressDialog: document.getElementById("syncProgressDialog"),
+  syncProgressTitle: document.getElementById("syncProgressTitle"),
+  syncProgressText: document.getElementById("syncProgressText"),
   appPromptDialog: document.getElementById("appPromptDialog"),
   appPromptTitle: document.getElementById("appPromptTitle"),
   appPromptText: document.getElementById("appPromptText"),
@@ -5573,6 +5576,20 @@ function buildIndexDiffSummary(diff, localSnapshot, remoteSnapshot) {
   return lines.join("\n");
 }
 
+function openSyncProgressDialog(title, message) {
+  if (refs.syncProgressTitle) refs.syncProgressTitle.textContent = title;
+  if (refs.syncProgressText) refs.syncProgressText.textContent = message;
+  refs.syncProgressDialog?.showModal();
+}
+
+function updateSyncProgress(message) {
+  if (refs.syncProgressText) refs.syncProgressText.textContent = message;
+}
+
+function closeSyncProgressDialog() {
+  refs.syncProgressDialog?.close();
+}
+
 function openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source, remoteSnapshot) {
   pendingSyncDecisionContext = {
     remoteIndex,
@@ -5612,10 +5629,13 @@ async function chooseLocalSyncDecision() {
     return;
   }
 
+  openSyncProgressDialog("上传中…", "正在检查差异数据…");
   try {
     let patch;
     if (context.isIndexBased) {
+      updateSyncProgress("正在拉取云端数据…");
       const remoteSnapshot = await fetchRemoteSnapshot();
+      updateSyncProgress("正在计算差异…");
       patch = buildPatchFromDiff(context.localSnapshot, buildSyncDiff(context.localSnapshot, remoteSnapshot));
       patch.baselineRevision = lastRemoteRevision;
     } else {
@@ -5623,15 +5643,19 @@ async function chooseLocalSyncDecision() {
     }
 
     if (isPatchEmpty(patch)) {
+      closeSyncProgressDialog();
       if (context.source === "manual") {
         showAppMessage("本地与云端没有需要上传的差异。", "同步提示");
       }
       return;
     }
 
+    updateSyncProgress("正在上传到云端…");
     await postSyncAction("push-diff", patch);
-    showAppMessage(`已按本地数据同步到云端。\n${summarizePatchResult(patch)}`, "同步完成");
+    closeSyncProgressDialog();
+    showAppMessage(`上传完成。\n${summarizePatchResult(patch)}`, "上传完成");
   } catch (err) {
+    closeSyncProgressDialog();
     console.error("[GitHub Sync] Local->Remote sync failed:", err.message);
     showAppMessage(`同步失败：${err.message}`, "同步失败");
   }
@@ -5644,15 +5668,21 @@ async function chooseRemoteSyncDecision() {
     return;
   }
 
+  openSyncProgressDialog("下载中…", "正在连接云端…");
   try {
     if (context.isIndexBased) {
+      updateSyncProgress("正在下载云端数据…");
       const remoteSnapshot = await fetchRemoteSnapshot();
+      updateSyncProgress("正在应用云端数据…");
       applyRemoteSnapshotToLocal(remoteSnapshot);
     } else {
+      updateSyncProgress("正在应用云端数据…");
       applyRemoteSnapshotToLocal(context.remoteSnapshot);
     }
-    showAppMessage("已使用云端数据覆盖本地。", "同步完成");
+    closeSyncProgressDialog();
+    showAppMessage("下载完成，已使用云端数据覆盖本地。", "下载完成");
   } catch (err) {
+    closeSyncProgressDialog();
     console.error("[GitHub Sync] Remote->Local apply failed:", err.message);
     showAppMessage(`应用云端数据失败：${err.message}`, "同步失败");
   }
@@ -5731,24 +5761,34 @@ async function runSyncFlow(source = "manual", options = {}) {
     return;
   }
 
+  if (source === "manual") {
+    openSyncProgressDialog("检查同步状态…", "正在连接云端，请稍候…");
+  }
+
   try {
     const localSnapshot = buildLocalSnapshot();
     const localIndex = buildLightweightIndex(localSnapshot);
+    updateSyncProgress("正在拉取云端索引…");
     const remoteIndex = await fetchRemoteIndex();
+    updateSyncProgress("正在比较差异…");
     const diff = diffLightweightIndices(localIndex, remoteIndex);
 
     if (!diff.hasDiff) {
+      closeSyncProgressDialog();
       if (!options.silentWhenNoDiff) {
-        showAppMessage("本地与云端数据一致，无需同步。", "同步提示");
+        showAppMessage("本地与云端数据不存在差异。", "同步提示");
       }
       return;
     }
 
+    updateSyncProgress("正在拉取云端完整数据…");
     lastRemoteRevision = diff.remoteRevision;
     // 获取完整的远程数据以显示详细的差异信息
     const remoteSnapshot = await fetchRemoteSnapshot();
+    closeSyncProgressDialog();
     openSyncDecisionDialogWithIndex(remoteIndex, localSnapshot, diff, source, remoteSnapshot);
   } catch (err) {
+    closeSyncProgressDialog();
     console.error("[GitHub Sync] Sync flow failed:", err.message);
     if (source === "manual") {
       showAppMessage(`检查同步差异失败：${err.message}`, "同步失败");

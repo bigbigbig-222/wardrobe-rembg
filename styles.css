@@ -1708,6 +1708,20 @@ button:focus-visible {
   }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sync-progress-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e0d8cc;
+  border-top-color: #244640;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
 @media (min-width: 760px) {
   body {
     padding: 22px 24px 34px;
