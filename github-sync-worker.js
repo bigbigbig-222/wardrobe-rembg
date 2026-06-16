@@ -55,7 +55,25 @@ async function pullFromGist(token, gistId) {
       return { items: [], favoriteLooks: [] };
     }
 
-    const data = JSON.parse(file.content);
+    // GitHub API 对超过 1MB 的文件会截断 content 并设 truncated:true
+    // 此时必须通过 raw_url 获取完整内容
+    let rawContent;
+    if (file.truncated) {
+      const rawResponse = await fetch(file.raw_url, {
+        headers: {
+          'Authorization': `token ${token}`,
+          'User-Agent': 'Cloudflare-Worker',
+        },
+      });
+      if (!rawResponse.ok) {
+        throw new Error(`GitHub raw fetch error: ${rawResponse.status}`);
+      }
+      rawContent = await rawResponse.text();
+    } else {
+      rawContent = file.content;
+    }
+
+    const data = JSON.parse(rawContent);
     return data;
   } catch (error) {
     console.error('Pull error:', error);
