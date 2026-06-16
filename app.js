@@ -5428,7 +5428,12 @@ async function postSyncAction(action, data) {
       body: JSON.stringify({ action, data }),
     });
     if (!response.ok) {
-      throw new Error(`同步失败（${response.status}）`);
+      let detail = "";
+      try {
+        const errJson = await response.json();
+        detail = errJson.error || errJson.message || "";
+      } catch (_) { /* ignore parse errors */ }
+      throw new Error(`同步失败（${response.status}）${detail ? "：" + detail : ""}`);
     }
     return response.json();
   } catch (err) {
