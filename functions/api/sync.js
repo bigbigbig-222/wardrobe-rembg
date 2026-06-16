@@ -29,9 +29,9 @@ export async function onRequest(context) {
       body: request.body,
     });
 
-    const data = await response.json();
+    const data = await response.arrayBuffer();
 
-    return new Response(JSON.stringify(data), {
+    return new Response(data, {
       status: response.status,
       headers: {
         'Content-Type': 'application/json',
