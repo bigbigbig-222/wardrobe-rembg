@@ -268,6 +268,7 @@ const refs = {
   addSeason: document.getElementById("addSeason"),
   addColor: document.getElementById("addColor"),
   customColorInput: document.getElementById("customColorInput"),
+  customSizeInput: document.getElementById("customSizeInput"),
   imageInput: document.getElementById("imageInput"),
   previewWrap: document.getElementById("previewWrap"),
   previewImage: document.getElementById("previewImage"),
@@ -1882,7 +1883,15 @@ function openEditDialog(itemId) {
   refs.addForm.elements.price.value = Number(item.price);
   refs.addCategory.value = item.category;
   updateSizeOptions(item.category);
-  refs.addForm.elements.size.value = item.size;
+  // 处理尺码：如果在预设尺码列表中则使用select，否则使用自定义尺码
+  const sizeList = item.category === "鞋履" ? SIZE_SHOES : SIZE_CLOTHING;
+  if (sizeList.includes(item.size)) {
+    refs.addForm.elements.size.value = item.size;
+    refs.customSizeInput.value = "";
+  } else {
+    refs.addForm.elements.size.value = "";
+    refs.customSizeInput.value = item.size;
+  }
   refs.addSeason.value = item.season;
   
   // 处理颜色：如果在预设颜色列表中则使用select，否则使用自定义颜色
@@ -2042,6 +2051,7 @@ function resetAddForm() {
   refs.addSeason.value = "";
   refs.addColor.value = "";
   refs.customColorInput.value = "";
+  refs.customSizeInput.value = "";
   renderAddBrandMenu();
   toggleAddBrandMenu(false);
   clearImagePreview();
@@ -3541,12 +3551,15 @@ function onAddSubmit(event) {
   // 优先使用自定义颜色，否则使用select中的颜色
   const customColor = String(refs.customColorInput.value || "").trim();
   const selectedColor = customColor ? customColor : String(formData.get("color") || "");
+  // 优先使用自定义尺码，否则使用select中的尺码
+  const customSize = String(refs.customSizeInput.value || "").trim();
+  const selectedSize = customSize ? customSize : String(formData.get("size") || "");
   const editingEntry = state.editingId ? state.items.find((entry) => entry.id === state.editingId) : null;
 
   let payload = normalizeItem({
     name: String(formData.get("name") || "").trim(),
     brand: String(formData.get("brand") || "").trim(),
-    size: String(formData.get("size") || "").trim(),
+    size: selectedSize,
     price: Number(formData.get("price") || 0),
     category: String(formData.get("category") || CATEGORY_LIST[0]),
     season: String(formData.get("season") || "").trim(),
