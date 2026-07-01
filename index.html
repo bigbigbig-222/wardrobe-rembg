@@ -176,6 +176,7 @@
           <div class="list-title-wrap">
             <h2 id="listTitle">衣柜清单</h2>
             <button class="btn btn--ghost list-back-btn" id="clearCategoryView" type="button" hidden>返回全部分类</button>
+            <button class="btn btn--ghost list-back-btn" id="openSortDialogBtn" type="button">排序</button>
           </div>
           <span class="result-pill" id="resultCount">显示 0 件</span>
         </div>
@@ -641,6 +642,23 @@
         <footer class="dialog-card__footer">
           <button class="btn btn--ghost" id="cancelAppConfirmBtn" type="button">取消</button>
           <button class="btn btn--warn" id="confirmAppConfirmBtn" type="button">确认</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="sortOrderDialog" class="add-dialog">
+      <div class="dialog-card dialog-card--mini">
+        <header class="dialog-card__header">
+          <h3>拖动排序</h3>
+          <button class="close-btn" id="closeSortOrderDialog" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="dialog-card__body" style="padding: 0;">
+          <ul id="sortOrderList" class="sort-order-list"></ul>
+        </div>
+        <footer class="dialog-card__footer">
+          <button class="btn btn--ghost" id="cancelSortOrderBtn" type="button">取消</button>
+          <button class="btn btn--ghost" id="resetSortOrderBtn" type="button">恢复默认</button>
+          <button class="btn btn--primary" id="saveSortOrderBtn" type="button">保存排序</button>
         </footer>
       </div>
     </dialog>

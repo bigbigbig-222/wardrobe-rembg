@@ -172,6 +172,15 @@ body {
   line-height: 1.5;
 }
 
+.hero-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
 .view-tabs {
   display: inline-flex;
   gap: 6px;
@@ -180,6 +189,7 @@ body {
   padding: 4px;
   border-radius: 999px;
   margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .hero-top {
@@ -189,15 +199,6 @@ body {
   gap: 10px;
   flex-wrap: nowrap;
   margin-top: 6px;
-}
-
-.hero-nav {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
 }
 
 .tab-btn {
@@ -514,11 +515,11 @@ body {
   margin: 0;
   font-size: 0.88rem;
   font-weight: 700;
-  line-height: 1.1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  line-height: 1.2;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  max-width: 2.2em;
+  text-align: center;
 }
 
 .category-card__count {
@@ -1722,6 +1723,75 @@ button:focus-visible {
   margin: 0 auto;
 }
 
+/* 拖拽排序列表 */
+.sort-order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.sort-order-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0e8da;
+  background: #fff9ef;
+  user-select: none;
+  touch-action: none;
+  cursor: default;
+}
+
+.sort-order-item.is-dragging {
+  opacity: 0.45;
+}
+
+.sort-order-item.drag-over {
+  border-top: 2px solid #244640;
+}
+
+.sort-order-item__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sort-order-item__name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sort-order-item__sub {
+  font-size: 0.76rem;
+  color: #888;
+  margin-top: 1px;
+}
+
+.sort-order-item__handle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 4px;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.sort-order-item__handle:active {
+  cursor: grabbing;
+}
+
+.sort-order-item__handle span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: #aaa;
+  border-radius: 1px;
+}
+
 @media (min-width: 760px) {
   body {
     padding: 22px 24px 34px;
@@ -1771,9 +1841,9 @@ button:focus-visible {
   }
 
   .hero-nav {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .hero-actions {

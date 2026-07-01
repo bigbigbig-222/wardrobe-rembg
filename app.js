@@ -103,6 +103,7 @@ const STORAGE_KEY = "virtual-wardrobe-items-v3";
 const FAVORITE_LOOKS_KEY = "virtual-wardrobe-favorite-looks-v1";
 const BRAND_CATALOG_KEY = "virtual-wardrobe-brand-catalog-v1";
 const BRAND_LOGOS_KEY = "virtual-wardrobe-brand-logos-v1";
+const CUSTOM_SORT_KEY = "virtual-wardrobe-custom-sort-v1";
 const ACTIVE_USER_KEY = "virtual-wardrobe-active-user-v1";
 const KNOWN_USERS_KEY = "virtual-wardrobe-known-users-v1";
 const LEGACY_USER_MIGRATION_KEY = "virtual-wardrobe-legacy-user-migrated-v1";
@@ -123,6 +124,7 @@ const state = {
   brandCatalog: loadBrandCatalog(),
   brandLogos: loadBrandLogos(),
   currentUsername: loadPersistedActiveUsername(),
+  customSortOrder: [],  // 在 reloadStateForActiveUser 中加载
   imageDataList: [],
   coverImageIndex: 0,
   editingId: "",
@@ -143,6 +145,7 @@ const state = {
   conflictResolver: null,
   conflictStrategy: "ask",
   brandLibraryMultiSelectMode: false,
+  customSortOrder: [],  // item id 数组，空数组 = 未启用自定义排序
   brandLibrarySearchQuery: "",
 };
 
@@ -381,6 +384,13 @@ const refs = {
   importBrandLibBtn: document.getElementById("importBrandLibBtn"),
   importBrandLibInput: document.getElementById("importBrandLibInput"),
   addArticleNumber: document.getElementById("addArticleNumber"),
+  openSortDialogBtn: document.getElementById("openSortDialogBtn"),
+  sortOrderDialog: document.getElementById("sortOrderDialog"),
+  sortOrderList: document.getElementById("sortOrderList"),
+  closeSortOrderDialog: document.getElementById("closeSortOrderDialog"),
+  cancelSortOrderBtn: document.getElementById("cancelSortOrderBtn"),
+  resetSortOrderBtn: document.getElementById("resetSortOrderBtn"),
+  saveSortOrderBtn: document.getElementById("saveSortOrderBtn"),
   appPromptDialog: document.getElementById("appPromptDialog"),
   appPromptTitle: document.getElementById("appPromptTitle"),
   appPromptText: document.getElementById("appPromptText"),
@@ -572,6 +582,7 @@ function reloadStateForActiveUser() {
   state.favoriteLooks = loadFavoriteLooks();
   state.brandCatalog = loadBrandCatalog();
   state.brandLogos = loadBrandLogos();
+  state.customSortOrder = loadCustomSortOrder();
   state.currentRecommendations = [];
   state.activeCategory = "all";
   state.manualLookDraft = {
@@ -637,6 +648,20 @@ function loadItems() {
   } catch {
     return [];
   }
+}
+
+function loadCustomSortOrder() {
+  try {
+    const raw = localStorage.getItem(buildScopedStorageKey(CUSTOM_SORT_KEY));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomSortOrder() {
+  localStorage.setItem(buildScopedStorageKey(CUSTOM_SORT_KEY), JSON.stringify(state.customSortOrder));
 }
 
 function loadFavoriteLooks() {
@@ -1781,6 +1806,16 @@ function getFilteredItems() {
   }
   if (filters.sortOrder === "brand-asc") {
     return filtered.sort((a, b) => a.brand.localeCompare(b.brand, "zh"));
+  }
+  // 自定义排序：按 customSortOrder 中的 id 顺序，未出现的追加末尾
+  if (state.customSortOrder.length > 0) {
+    const orderMap = new Map(state.customSortOrder.map((id, idx) => [id, idx]));
+    return filtered.sort((a, b) => {
+      const ia = orderMap.has(a.id) ? orderMap.get(a.id) : Infinity;
+      const ib = orderMap.has(b.id) ? orderMap.get(b.id) : Infinity;
+      if (ia !== ib) return ia - ib;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }
   return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
@@ -3828,8 +3863,121 @@ function renderArchivedPanel() {
   }
 }
 
-function exportBrandLibrary() {
-  const payload = {
+// ===== 拖拽排序弹窗 =====
+let _sortDraftOrder = []; // 弹窗中的临时顺序（item id 数组）
+let _dragSrcIndex = null;
+
+function openSortDialog() {
+  // 以当前列表展示顺序为初始顺序（应用当前排序/自定义排序）
+  _sortDraftOrder = getFilteredItems().map((item) => item.id);
+  renderSortOrderList();
+  refs.sortOrderDialog.showModal();
+}
+
+function closeSortDialog() {
+  refs.sortOrderDialog.close();
+}
+
+function renderSortOrderList() {
+  const list = refs.sortOrderList;
+  if (!list) return;
+  list.innerHTML = "";
+
+  const allItems = new Map(state.items.map((item) => [item.id, item]));
+
+  for (let i = 0; i < _sortDraftOrder.length; i++) {
+    const item = allItems.get(_sortDraftOrder[i]);
+    if (!item) continue;
+
+    const li = document.createElement("li");
+    li.className = "sort-order-item";
+    li.dataset.idx = String(i);
+    li.draggable = true;
+    li.innerHTML = `
+      <div class="sort-order-item__info">
+        <div class="sort-order-item__name">${item.name}</div>
+        <div class="sort-order-item__sub">${item.brand}${item.articleNumber ? " · " + item.articleNumber : ""} · ${item.category}</div>
+      </div>
+      <div class="sort-order-item__handle" data-drag-handle>
+        <span></span><span></span><span></span>
+      </div>
+    `;
+
+    // 桌面端：drag API
+    li.addEventListener("dragstart", (e) => {
+      _dragSrcIndex = i;
+      li.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    li.addEventListener("dragend", () => {
+      li.classList.remove("is-dragging");
+      list.querySelectorAll(".sort-order-item").forEach((el) => el.classList.remove("drag-over"));
+    });
+    li.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      list.querySelectorAll(".sort-order-item").forEach((el) => el.classList.remove("drag-over"));
+      li.classList.add("drag-over");
+    });
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (_dragSrcIndex === null || _dragSrcIndex === i) return;
+      const moved = _sortDraftOrder.splice(_dragSrcIndex, 1)[0];
+      _sortDraftOrder.splice(i, 0, moved);
+      _dragSrcIndex = null;
+      renderSortOrderList();
+    });
+
+    // 移动端：pointer events（通过拖动 handle）
+    const handle = li.querySelector("[data-drag-handle]");
+    handle.addEventListener("pointerdown", (eDown) => {
+      eDown.preventDefault();
+      const startY = eDown.clientY;
+      const itemHeight = li.offsetHeight;
+      let currentIdx = i;
+
+      const onMove = (eMove) => {
+        const dy = eMove.clientY - startY;
+        const newIdx = Math.max(0, Math.min(_sortDraftOrder.length - 1, Math.round(i + dy / itemHeight)));
+        if (newIdx !== currentIdx) {
+          currentIdx = newIdx;
+          list.querySelectorAll(".sort-order-item").forEach((el) => el.classList.remove("drag-over"));
+          list.querySelectorAll(".sort-order-item")[newIdx]?.classList.add("drag-over");
+        }
+      };
+      const onUp = (eUp) => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        list.querySelectorAll(".sort-order-item").forEach((el) => el.classList.remove("drag-over"));
+        if (currentIdx !== i) {
+          const moved = _sortDraftOrder.splice(i, 1)[0];
+          _sortDraftOrder.splice(currentIdx, 0, moved);
+          renderSortOrderList();
+        }
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    });
+
+    list.append(li);
+  }
+}
+
+function saveSortOrder() {
+  state.customSortOrder = [..._sortDraftOrder];
+  saveCustomSortOrder();
+  closeSortDialog();
+  renderClothes();
+}
+
+function resetSortOrder() {
+  state.customSortOrder = [];
+  saveCustomSortOrder();
+  closeSortDialog();
+  renderClothes();
+}
+
+function exportBrandLibrary() {  const payload = {
     exportedAt: new Date().toISOString(),
     brands: dedupeBrands(state.brandCatalog),
     brandLogos: state.brandLogos || {},
@@ -5005,6 +5153,12 @@ function bindEvents() {
     refs.importBrandLibInput?.click();
   });
   refs.importBrandLibInput?.addEventListener("change", onImportBrandLibFileChange);
+  refs.openSortDialogBtn?.addEventListener("click", openSortDialog);
+  refs.closeSortOrderDialog?.addEventListener("click", closeSortDialog);
+  refs.cancelSortOrderBtn?.addEventListener("click", closeSortDialog);
+  refs.saveSortOrderBtn?.addEventListener("click", saveSortOrder);
+  refs.resetSortOrderBtn?.addEventListener("click", resetSortOrder);
+  refs.sortOrderDialog?.addEventListener("cancel", (e) => { e.preventDefault(); closeSortDialog(); });
   refs.keepExistingBtn.addEventListener("click", () => resolveConflictChoice("keep-existing"));
   refs.keepIncomingBtn.addEventListener("click", () => resolveConflictChoice("replace"));
   refs.keepAllConflictsBtn.addEventListener("click", () => resolveConflictChoice("keep-all"));
