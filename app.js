@@ -1,4 +1,4 @@
-const CATEGORY_LIST = ["短袖上衣", "长袖上衣", "短裤", "长裤", "鞋履", "配饰"];
+const CATEGORY_LIST = ["短袖上衣", "长袖上衣", "外套", "短裤", "长裤", "鞋履", "配饰"];
 const SEASON_LIST = ["春秋", "夏季", "冬季", "四季"];
 const COLOR_LIST = ["黑色", "白色", "灰色", "蓝色", "绿色", "红色", "米色", "棕色", "黄色", "紫色", "粉色"];
 
@@ -373,6 +373,14 @@ const refs = {
   syncProgressDialog: document.getElementById("syncProgressDialog"),
   syncProgressTitle: document.getElementById("syncProgressTitle"),
   syncProgressText: document.getElementById("syncProgressText"),
+  tabArchive: document.getElementById("tabArchive"),
+  archivedPanel: document.getElementById("archivedPanel"),
+  archivedList: document.getElementById("archivedList"),
+  archivedCount: document.getElementById("archivedCount"),
+  exportBrandLibBtn: document.getElementById("exportBrandLibBtn"),
+  importBrandLibBtn: document.getElementById("importBrandLibBtn"),
+  importBrandLibInput: document.getElementById("importBrandLibInput"),
+  addArticleNumber: document.getElementById("addArticleNumber"),
   appPromptDialog: document.getElementById("appPromptDialog"),
   appPromptTitle: document.getElementById("appPromptTitle"),
   appPromptText: document.getElementById("appPromptText"),
@@ -605,6 +613,7 @@ function normalizeItem(raw) {
     id: raw.id || `item-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     name: String(raw.name || "").trim(),
     brand: String(raw.brand || "").trim(),
+    articleNumber: String(raw.articleNumber || "").trim(),
     size: String(raw.size || "").trim(),
     price: Number(raw.price || 0),
     category,
@@ -613,6 +622,7 @@ function normalizeItem(raw) {
     image: cover,
     images,
     createdAt: raw.createdAt || new Date().toISOString(),
+    archived: raw.archived === true,
   };
 }
 
@@ -1524,6 +1534,14 @@ function getScopedItems() {
   return state.items.filter((item) => item.category === state.activeCategory);
 }
 
+function getActiveItems() {
+  return state.items.filter((item) => !item.archived);
+}
+
+function getArchivedItems() {
+  return state.items.filter((item) => item.archived);
+}
+
 function renderBrandOptions() {
   const current = refs.filterBrand.value || "all";
   const brands = getAvailableBrands();
@@ -1676,7 +1694,7 @@ function renderCategories() {
     const count = document.createElement("p");
     count.className = "category-card__count";
     // 根据items中该分类的数量来计算
-    const categoryCount = state.items.filter((item) => item.category === category).length;
+    const categoryCount = getActiveItems().filter((item) => item.category === category).length;
     count.textContent = `${categoryCount} 件`;
 
     button.append(name, count);
@@ -1735,7 +1753,7 @@ function matchPriceRange(price, rangeValue) {
 function getFilteredItems() {
   const filters = getFilters();
 
-  const filtered = state.items.filter((item) => {
+  const filtered = getActiveItems().filter((item) => {
     const byCategory = filters.category === "all" || item.category === filters.category;
     const byBrand = filters.brand === "all" || item.brand === filters.brand;
     const byColor = filters.color === "all" || item.color === filters.color;
@@ -1754,6 +1772,15 @@ function getFilteredItems() {
   }
   if (filters.sortOrder === "price-desc") {
     return filtered.sort((a, b) => Number(b.price) - Number(a.price));
+  }
+  if (filters.sortOrder === "name-asc") {
+    return filtered.sort((a, b) => a.name.localeCompare(b.name, "zh"));
+  }
+  if (filters.sortOrder === "name-desc") {
+    return filtered.sort((a, b) => b.name.localeCompare(a.name, "zh"));
+  }
+  if (filters.sortOrder === "brand-asc") {
+    return filtered.sort((a, b) => a.brand.localeCompare(b.brand, "zh"));
   }
   return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
@@ -1784,7 +1811,10 @@ function renderClothes() {
       brandLogoImage.alt = "";
       brandLogoImage.dataset.brandKey = normalizeBrandKey(item.brand);
       meta.append(brandLogoImage);
-      meta.append(document.createTextNode(`${item.brand} · 尺码 ${item.size} · ${item.color} · ${item.season}`));
+      const metaParts = [`${item.brand} · 尺码 ${item.size}`];
+      if (item.articleNumber) metaParts.push(`货号 ${item.articleNumber}`);
+      metaParts.push(`${item.color} · ${item.season}`);
+      meta.append(document.createTextNode(metaParts.join(" · ")));
       if (brandLogoImage) {
         brandLogoImage.addEventListener("error", onBrandLogoError);
       }
@@ -1846,19 +1876,26 @@ function renderFavoriteLooks() {
 function setView(view) {
   state.activeView = view;
   const isWardrobe = view === "wardrobe";
+  const isArchive = view === "archive";
   refs.wardrobePanel.hidden = !isWardrobe;
   refs.filterPanel.hidden = !isWardrobe;
   refs.listPanel.hidden = !isWardrobe;
-  refs.recommendPanel.hidden = isWardrobe;
+  refs.recommendPanel.hidden = view !== "recommend";
+  if (refs.archivedPanel) refs.archivedPanel.hidden = !isArchive;
   refs.wardrobeActions.classList.toggle("is-hidden", !isWardrobe);
   refs.tabWardrobe.classList.toggle("is-active", isWardrobe);
-  refs.tabRecommend.classList.toggle("is-active", !isWardrobe);
+  refs.tabRecommend.classList.toggle("is-active", view === "recommend");
+  if (refs.tabArchive) refs.tabArchive.classList.toggle("is-active", isArchive);
   refs.tabWardrobe.setAttribute("aria-selected", String(isWardrobe));
-  refs.tabRecommend.setAttribute("aria-selected", String(!isWardrobe));
+  refs.tabRecommend.setAttribute("aria-selected", String(view === "recommend"));
+  if (refs.tabArchive) refs.tabArchive.setAttribute("aria-selected", String(isArchive));
 
-  if (!isWardrobe) {
+  if (view === "recommend") {
     renderLockOptions();
     renderRecommendations();
+  }
+  if (isArchive) {
+    renderArchivedPanel();
   }
 }
 
@@ -1882,6 +1919,7 @@ function openEditDialog(itemId) {
   refs.addForm.elements.name.value = item.name;
   setAddBrandValue(item.brand);
   toggleAddBrandMenu(false);
+  if (refs.addArticleNumber) refs.addArticleNumber.value = item.articleNumber || "";
   refs.addForm.elements.size.value = item.size;
   refs.addForm.elements.price.value = Number(item.price);
   refs.addCategory.value = item.category;
@@ -2055,6 +2093,7 @@ function resetAddForm() {
   refs.addColor.value = "";
   refs.customColorInput.value = "";
   refs.customSizeInput.value = "";
+  if (refs.addArticleNumber) refs.addArticleNumber.value = "";
   renderAddBrandMenu();
   toggleAddBrandMenu(false);
   clearImagePreview();
@@ -3562,6 +3601,7 @@ function onAddSubmit(event) {
   let payload = normalizeItem({
     name: String(formData.get("name") || "").trim(),
     brand: String(formData.get("brand") || "").trim(),
+    articleNumber: String(refs.addArticleNumber?.value || "").trim(),
     size: selectedSize,
     price: Number(formData.get("price") || 0),
     category: String(formData.get("category") || CATEGORY_LIST[0]),
@@ -3578,6 +3618,7 @@ function onAddSubmit(event) {
       ...payload,
       name: payload.name || editingEntry.name || "",
       brand: payload.brand || editingEntry.brand || "",
+      articleNumber: payload.articleNumber ?? editingEntry.articleNumber ?? "",
       size: payload.size || editingEntry.size || "",
       season: payload.season || editingEntry.season || "四季",
       color: payload.color || editingEntry.color || "",
@@ -3721,6 +3762,116 @@ function deleteItem(itemId) {
   }, "删除服装");
 }
 
+function archiveItem(itemId) {
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item) return;
+  item.archived = true;
+  saveItems();
+  renderCategories();
+  renderClothes();
+  if (refs.archivedPanel && !refs.archivedPanel.hidden) renderArchivedPanel();
+}
+
+function restoreItem(itemId) {
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item) return;
+  item.archived = false;
+  saveItems();
+  renderCategories();
+  renderClothes();
+  renderArchivedPanel();
+}
+
+function renderArchivedPanel() {
+  if (!refs.archivedList) return;
+  const archived = getArchivedItems();
+  refs.archivedList.innerHTML = "";
+  if (refs.archivedCount) refs.archivedCount.textContent = `${archived.length} 件`;
+
+  if (archived.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "旧衣库暂无服装。";
+    refs.archivedList.append(empty);
+    return;
+  }
+
+  for (const item of archived) {
+    const clone = refs.cardTemplate.content.firstElementChild.cloneNode(true);
+    clone.dataset.itemId = item.id;
+    const coverImage = item.image || item.images?.[0] || PLACEHOLDER_IMAGE;
+    clone.querySelector(".clothing-card__img").src = coverImage;
+    clone.querySelector(".clothing-card__img").alt = `${item.name} 照片`;
+    clone.querySelector(".clothing-card__category").textContent = item.category;
+    clone.querySelector(".clothing-card__name").textContent = item.name;
+    const meta = clone.querySelector(".clothing-card__meta");
+    meta.textContent = "";
+    const brandLogoImage = document.createElement("img");
+    brandLogoImage.className = "brand-inline-logo";
+    brandLogoImage.src = getBrandLogo(item.brand);
+    brandLogoImage.alt = "";
+    brandLogoImage.dataset.brandKey = normalizeBrandKey(item.brand);
+    meta.append(brandLogoImage);
+    const metaParts = [`${item.brand} · 尺码 ${item.size}`];
+    if (item.articleNumber) metaParts.push(`货号 ${item.articleNumber}`);
+    metaParts.push(`${item.color} · ${item.season}`);
+    meta.append(document.createTextNode(metaParts.join(" · ")));
+    if (brandLogoImage) brandLogoImage.addEventListener("error", onBrandLogoError);
+    clone.querySelector(".clothing-card__price").textContent = formatPrice(item.price);
+    // 替换操作按钮：只显示恢复和删除
+    const actions = clone.querySelector(".card-actions");
+    actions.innerHTML = `
+      <button class="btn btn--ghost card-btn" data-action="restore" type="button">恢复</button>
+      <button class="btn btn--ghost card-btn card-btn--danger" data-action="delete" type="button">删除</button>
+    `;
+    refs.archivedList.append(clone);
+  }
+}
+
+function exportBrandLibrary() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    brands: dedupeBrands(state.brandCatalog),
+    brandLogos: state.brandLogos || {},
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `wardrobe-brands-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function onImportBrandLibFileChange(event) {
+  const [file] = event.target.files ?? [];
+  if (!file) return;
+  event.target.value = "";
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const importedBrands = Array.isArray(parsed.brands) ? parsed.brands : [];
+      const importedLogos = parsed.brandLogos && typeof parsed.brandLogos === "object" ? parsed.brandLogos : {};
+      if (importedBrands.length === 0 && Object.keys(importedLogos).length === 0) {
+        showAppMessage("文件中没有可导入的品牌数据。", "导入提示");
+        return;
+      }
+      state.brandCatalog = dedupeBrands([...state.brandCatalog, ...importedBrands]);
+      state.brandLogos = { ...state.brandLogos, ...importedLogos };
+      saveBrandCatalog();
+      saveBrandLogos();
+      renderBrandOptions();
+      showAppMessage(`品牌库导入成功：${importedBrands.length} 个品牌。`, "导入完成");
+    } catch {
+      showAppMessage("品牌库文件格式错误，请确认是有效的 JSON 文件。", "导入失败");
+    }
+  };
+  reader.readAsText(file);
+}
+
 function onClothesAction(event) {
   const actionButton = event.target.closest("button[data-action]");
   if (!actionButton) {
@@ -3736,6 +3887,16 @@ function onClothesAction(event) {
   const action = actionButton.dataset.action;
   if (action === "edit") {
     openEditDialog(itemId);
+    return;
+  }
+
+  if (action === "archive") {
+    archiveItem(itemId);
+    return;
+  }
+
+  if (action === "restore") {
+    restoreItem(itemId);
     return;
   }
 
@@ -3766,9 +3927,10 @@ function weatherLabel(weather) {
 }
 
 function renderLockOptions() {
-  const topItems = state.items.filter((item) => item.category === "短袖上衣" || item.category === "长袖上衣");
-  const bottomItems = state.items.filter((item) => item.category === "长裤" || item.category === "短裤");
-  const accessoryItems = state.items.filter((item) => item.category === "配饰");
+  const active = getActiveItems();
+  const topItems = active.filter((item) => item.category === "短袖上衣" || item.category === "长袖上衣" || item.category === "外套");
+  const bottomItems = active.filter((item) => item.category === "长裤" || item.category === "短裤");
+  const accessoryItems = active.filter((item) => item.category === "配饰");
 
   fillLockSelect(refs.lockTopSelect, topItems, "不锁定上衣");
   fillLockSelect(refs.lockBottomSelect, bottomItems, "不锁定下装");
@@ -3799,16 +3961,16 @@ function buildRecommendations(weather, scene) {
     accessory: getItemById(refs.lockAccessorySelect.value),
   };
 
-  let tops = state.items.filter(
-    (item) => (item.category === "短袖上衣" || item.category === "长袖上衣") && allowSeasons.includes(item.season)
+  let tops = getActiveItems().filter(
+    (item) => (item.category === "短袖上衣" || item.category === "长袖上衣" || item.category === "外套") && allowSeasons.includes(item.season)
   );
-  let bottoms = state.items.filter(
+  let bottoms = getActiveItems().filter(
     (item) => (item.category === "长裤" || item.category === "短裤") && allowSeasons.includes(item.season)
   );
-  const accessories = state.items.filter((item) => item.category === "配饰" && allowSeasons.includes(item.season));
+  const accessories = getActiveItems().filter((item) => item.category === "配饰" && allowSeasons.includes(item.season));
 
   if (weather === "cold") {
-    tops = tops.filter((item) => item.category === "长袖上衣");
+    tops = tops.filter((item) => item.category === "长袖上衣" || item.category === "外套");
     bottoms = bottoms.filter((item) => item.category === "长裤");
   }
   if (weather === "hot") {
@@ -3909,16 +4071,16 @@ function saveLook(planIndex) {
 
 function getManualLookItemsByTarget(target) {
   if (target === "top") {
-    return state.items.filter((item) => item.category === "短袖上衣" || item.category === "长袖上衣");
+    return getActiveItems().filter((item) => item.category === "短袖上衣" || item.category === "长袖上衣" || item.category === "外套");
   }
   if (target === "bottom") {
-    return state.items.filter((item) => item.category === "长裤" || item.category === "短裤");
+    return getActiveItems().filter((item) => item.category === "长裤" || item.category === "短裤");
   }
   if (target === "shoes") {
-    return state.items.filter((item) => item.category === "鞋履");
+    return getActiveItems().filter((item) => item.category === "鞋履");
   }
   if (target === "accessory") {
-    return state.items.filter((item) => item.category === "配饰");
+    return getActiveItems().filter((item) => item.category === "配饰");
   }
   return [];
 }
@@ -4634,6 +4796,7 @@ function bindEvents() {
   refs.addUnsavedConfirmBtn?.addEventListener("click", forceCloseAddDialog);
   refs.tabWardrobe.addEventListener("click", () => setView("wardrobe"));
   refs.tabRecommend.addEventListener("click", () => setView("recommend"));
+  refs.tabArchive?.addEventListener("click", () => setView("archive"));
   refs.clearCategoryView.addEventListener("click", () => setCategoryMode("all"));
   refs.categoryGrid.addEventListener("click", onCategoryClick);
 
@@ -4766,6 +4929,7 @@ function bindEvents() {
   refs.addCategory.addEventListener("change", (e) => updateSizeOptions(e.target.value));
   refs.addForm.addEventListener("submit", onAddSubmit);
   refs.clothesList.addEventListener("click", onClothesAction);
+  refs.archivedList?.addEventListener("click", onClothesAction);
 
   refs.filterCategory.addEventListener("change", onFiltersChange);
   refs.filterBrand.addEventListener("change", onFiltersChange);
@@ -4832,6 +4996,15 @@ function bindEvents() {
     refs.exportScopeDialog.close();
     exportCsv();
   });
+  refs.exportBrandLibBtn?.addEventListener("click", () => {
+    refs.ioMenu.removeAttribute("open");
+    exportBrandLibrary();
+  });
+  refs.importBrandLibBtn?.addEventListener("click", () => {
+    refs.ioMenu.removeAttribute("open");
+    refs.importBrandLibInput?.click();
+  });
+  refs.importBrandLibInput?.addEventListener("change", onImportBrandLibFileChange);
   refs.keepExistingBtn.addEventListener("click", () => resolveConflictChoice("keep-existing"));
   refs.keepIncomingBtn.addEventListener("click", () => resolveConflictChoice("replace"));
   refs.keepAllConflictsBtn.addEventListener("click", () => resolveConflictChoice("keep-all"));

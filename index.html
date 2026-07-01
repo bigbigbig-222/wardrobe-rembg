@@ -68,6 +68,9 @@
               <button class="tab-btn" id="tabRecommend" type="button" role="tab" aria-selected="false">
                 穿搭推荐
               </button>
+              <button class="tab-btn" id="tabArchive" type="button" role="tab" aria-selected="false">
+                旧衣库
+              </button>
             </div>
             <div class="hero-actions" id="wardrobeActions">
               <button class="btn btn--primary" id="openAddFromHero" type="button">+ 添加新服装</button>
@@ -79,6 +82,10 @@
                   <button class="io-menu__item" id="importJsonBtn" type="button" role="menuitem">导入 JSON</button>
                   <button class="io-menu__item" id="importCsvBtn" type="button" role="menuitem">导入 CSV</button>
                   <button class="io-menu__item" id="exportBtn" type="button" role="menuitem">导出数据</button>
+                  <hr class="io-menu__divider" />
+                  <button class="io-menu__item" id="exportBrandLibBtn" type="button" role="menuitem">导出品牌库</button>
+                  <button class="io-menu__item" id="importBrandLibBtn" type="button" role="menuitem">导入品牌库</button>
+                  <input id="importBrandLibInput" type="file" accept="application/json" hidden />
                 </div>
               </details>
               <input id="importJsonInput" type="file" accept="application/json,.csv,text/csv" hidden />
@@ -142,6 +149,9 @@
               <option value="oldest">最早添加</option>
               <option value="price-asc">价格从低到高</option>
               <option value="price-desc">价格从高到低</option>
+              <option value="name-asc">名称 A-Z</option>
+              <option value="name-desc">名称 Z-A</option>
+              <option value="brand-asc">品牌 A-Z</option>
             </select>
             <select id="filterPriceRange" name="priceRange" aria-label="价格区间">
               <option value="all">全部价格</option>
@@ -213,6 +223,15 @@
           <div id="favoriteList" class="recommend-list"></div>
         </section>
       </section>
+
+      <section class="panel" id="archivedPanel" aria-labelledby="archivedTitle" hidden>
+        <div class="panel__top">
+          <h2 id="archivedTitle">旧衣库</h2>
+          <span class="result-pill" id="archivedCount">0 件</span>
+        </div>
+        <p class="category-view-label" style="margin-bottom:0.75rem;color:#888;">移入旧衣库的服装不会出现在衣柜清单和穿搭推荐中，可随时恢复。</p>
+        <div id="archivedList" class="clothes-list"></div>
+      </section>
     </main>
 
     <button class="fab" id="openAddFab" type="button" aria-label="添加新服装">+</button>
@@ -249,6 +268,11 @@
               </button>
               <div id="addBrandMenu" class="brand-filter-menu" role="listbox" hidden></div>
             </div>
+          </label>
+
+          <label>
+            货号 <span style="font-size:0.8em;color:#999;">（选填）</span>
+            <input name="articleNumber" id="addArticleNumber" type="text" maxlength="50" placeholder="例如：ABC-1234" />
           </label>
 
           <label>
@@ -677,6 +701,7 @@
           <p class="clothing-card__price"></p>
           <div class="card-actions">
             <button class="btn btn--ghost card-btn" data-action="edit" type="button">编辑</button>
+            <button class="btn btn--ghost card-btn" data-action="archive" type="button">移入旧衣库</button>
             <button class="btn btn--ghost card-btn card-btn--danger" data-action="delete" type="button">删除</button>
           </div>
         </div>
