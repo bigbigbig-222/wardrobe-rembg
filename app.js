@@ -3893,7 +3893,9 @@ function renderSortOrderList() {
     li.className = "sort-order-item";
     li.dataset.idx = String(i);
     li.draggable = true;
+    const thumbSrc = item.image || item.images?.[0] || PLACEHOLDER_IMAGE;
     li.innerHTML = `
+      <img class="sort-order-item__thumb" src="${thumbSrc}" alt="" />
       <div class="sort-order-item__info">
         <div class="sort-order-item__name">${item.name}</div>
         <div class="sort-order-item__sub">${item.brand}${item.articleNumber ? " · " + item.articleNumber : ""} · ${item.category}</div>

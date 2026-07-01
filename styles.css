@@ -1792,6 +1792,15 @@ button:focus-visible {
   border-radius: 1px;
 }
 
+.sort-order-item__thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: #ede5d8;
+}
+
 @media (min-width: 760px) {
   body {
     padding: 22px 24px 34px;
